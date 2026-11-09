@@ -14,9 +14,8 @@ PC (Windows 10/11) : lance « RetroStation-Setup-…-Windows.exe ».
      « Informations complémentaires » puis « Exécuter quand même ».
      Un raccourci « Rétro Station » est créé sur le bureau.
 
-Mac : ouvre le DMG qui correspond à ton Mac
-     (Menu Pomme > À propos de ce Mac : « Puce Apple M… » = AppleSilicon,
-     « Processeur Intel » = Intel), puis glisse « Rétro Station » dans Applications.
+Mac (Intel ou puce M, un seul fichier pour tous) : ouvre « RetroStation-…-Mac-Universel.dmg »,
+     puis glisse « Rétro Station » dans Applications.
      Au premier lancement, si le Mac refuse d'ouvrir l'appli :
      Réglages Système > Confidentialité et sécurité > « Ouvrir quand même ».
 

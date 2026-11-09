@@ -1,10 +1,11 @@
 #!/bin/bash
-# Fabrique « Rétro Station.app » et son DMG. Usage : build_dmg.sh Intel|AppleSilicon
+# Fabrique « Rétro Station.app » universelle (Intel + puce M) et son DMG.
+# Usage : build_dmg.sh [chemin du python universel]
 set -euo pipefail
-LABEL="${1:?Intel ou AppleSilicon}"
+PY="${1:-python3}"
 VERSION="${RS_VERSION:-$(python3 -c 'import sys; sys.path.insert(0, "."); from retrostation import paths; print(paths.VERSION)')}"
 
-pyinstaller --noconfirm --windowed --name "Retro Station" \
+"$PY" -m PyInstaller --noconfirm --windowed --target-arch universal2 --name "Retro Station" \
   --icon assets/icon.icns --add-data "assets:assets" \
   --osx-bundle-identifier fr.fabricem.retrostation RetroStation.pyw
 
@@ -24,6 +25,6 @@ codesign --force --deep --sign - "$APP"
 rm -rf dmg && mkdir -p dmg installers
 cp -R "$APP" "dmg/Rétro Station.app"
 ln -s /Applications dmg/Applications
-OUT="installers/RetroStation-$VERSION-Mac-$LABEL.dmg"
+OUT="installers/RetroStation-$VERSION-Mac-Universel.dmg"
 hdiutil create -volname "Rétro Station" -srcfolder dmg -ov -format UDZO "$OUT"
 echo "DMG : $OUT"

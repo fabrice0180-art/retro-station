@@ -8,8 +8,7 @@ Neo Geo, Neo Geo CD, Neo Geo Pocket / Color.
 ## Télécharger
 Onglet **Releases** (à droite) :
 - `RetroStation-Setup-…-Windows.exe` — PC
-- `RetroStation-…-Mac-AppleSilicon.dmg` — Mac M1, M2, M3, M4…
-- `RetroStation-…-Mac-Intel.dmg` — Mac Intel
+- `RetroStation-…-Mac-Universel.dmg` — tous les Mac (Intel et puce M)
 
 ## Fabriquer une nouvelle version
 Onglet **Actions** > « Fabriquer les installateurs » > **Run workflow**.

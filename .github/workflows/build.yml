@@ -37,28 +37,24 @@ jobs:
           path: installers/*.exe
 
   mac:
-    name: Mac ${{ matrix.label }} (DMG)
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            label: AppleSilicon
-          - runner: macos-15-intel
-            label: Intel
-    runs-on: ${{ matrix.runner }}
+    name: Mac universel Intel + puce M (DMG)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Python universel (python.org)
+        run: |
+          curl -fsSL -o py.pkg https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg
+          sudo installer -pkg py.pkg -target /
+          /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12 -m venv venv
       - name: Dépendances
-        run: pip install -r requirements.txt pyinstaller
+        run: venv/bin/python -m pip install -r requirements.txt pyinstaller
       - name: Application + DMG
-        run: bash packaging/mac/build_dmg.sh ${{ matrix.label }}
+        run: bash packaging/mac/build_dmg.sh venv/bin/python
+      - name: Vérification des deux architectures
+        run: lipo -archs "dist/Retro Station.app/Contents/MacOS/Retro Station"
       - uses: actions/upload-artifact@v4
         with:
-          name: mac-${{ matrix.label }}
+          name: mac
           path: installers/*.dmg
 
   release:
@@ -78,6 +74,5 @@ jobs:
             Rétro Station — par Fabrice M.
 
             • Windows : RetroStation-Setup-…-Windows.exe
-            • Mac puce M (M1, M2, M3, M4…) : RetroStation-…-Mac-AppleSilicon.dmg
-            • Mac Intel : RetroStation-…-Mac-Intel.dmg
+            • Mac (tous les Mac, Intel et puce M) : RetroStation-…-Mac-Universel.dmg
           files: out/*
