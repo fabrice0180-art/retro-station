@@ -25,10 +25,61 @@ def missing_bios(cid: str):
 
 
 # ------------------------------------------------------------------ RetroArch
-def write_retroarch_cfg(fullscreen=True) -> Path:
+HANDHELDS = {"gb", "gbc", "gba", "gg", "ngp", "ngpc"}
+DISPLAY_DEFAULTS = {"fullscreen": True, "bezel": "none", "bezel_color": "", "bezel_size": 82,
+                    "scale": "fit", "smooth": False, "effect": "none", "window": 4, "dolphin_res": 3}
+EFFECTS = {"none": "Aucun", "lcd": "Écran LCD (grille de pixels)", "crt": "Télé cathodique (lignes)",
+           "smooth": "Lissage intelligent (xBRZ)"}
+SHADER_FILES = {
+    "lcd": ["lcd-grid-v2.slangp", "lcd3x.slangp", "lcd-grid-v2.glslp", "lcd3x.glslp"],
+    "crt": ["crt-easymode.slangp", "crt-lottes.slangp", "crt-geom.slangp", "crt-easymode.glslp", "crt-geom.glslp"],
+    "smooth": ["xbrz-freescale.slangp", "xbrz-freescale-multipass.slangp", "scalefx.slangp", "xbrz-freescale.glslp"],
+}
+
+
+def display_for(settings: dict, cid: str) -> dict:
+    """Réglages d'affichage d'une console (valeurs par défaut + choix de l'utilisateur)."""
+    d = dict(DISPLAY_DEFAULTS)
+    if cid in HANDHELDS:   # consoles portables : contour + effet LCD par défaut
+        d.update(bezel="handheld", bezel_color="Gris clair", effect="lcd")
+    d["fullscreen"] = settings.get("fullscreen", True)
+    d.update(settings.get("display", {}).get(cid, {}))
+    return d
+
+
+_shader_cache = {}
+
+
+def find_shader(effect: str):
+    if effect not in SHADER_FILES:
+        return None
+    if effect in _shader_cache:
+        return _shader_cache[effect]
+    roots = [paths.ENGINES / "shaders", engines.RA_DIR / "shaders"]
+    ra = engines.retroarch_exe()
+    if ra and paths.IS_MAC:
+        roots.append(ra.parent.parent / "Resources" / "shaders")
+    found = None
+    for name in SHADER_FILES[effect]:
+        for root in roots:
+            if root.exists():
+                found = next(root.rglob(name), None)
+                if found:
+                    break
+        if found:
+            break
+    _shader_cache[effect] = found
+    return found
+
+
+def write_retroarch_cfg(disp: dict, bezel=None) -> Path:
+    """bezel = (fichier .cfg du contour, (x, y, w, h) du trou) ou None."""
     cfg = paths.ENGINES / "retrostation.cfg"
     vals = {
-        "video_fullscreen": "true" if fullscreen else "false",
+        "video_fullscreen": "true" if (disp["fullscreen"] or bezel) else "false",
+        "video_windowed_fullscreen": "true",
+        "video_scale": str(int(disp.get("window", 4))),
+        "video_smooth": "true" if disp.get("smooth") else "false",
         "user_language": "2",                       # français
         "system_directory": str(paths.BIOS),
         "savefile_directory": str(paths.SAVES / "parties"),
@@ -47,6 +98,24 @@ def write_retroarch_cfg(fullscreen=True) -> Path:
         "log_to_file_timestamp": "false",
         "log_dir": str(paths.LOGS),
     }
+    if bezel:
+        ovl, (x, y, w, h) = bezel
+        vals.update({
+            "input_overlay_enable": "true", "input_overlay": str(ovl), "input_overlay_opacity": "1.000000",
+            "input_overlay_scale": "1.000000", "input_overlay_scale_landscape": "1.000000",
+            "input_overlay_hide_in_menu": "true", "input_overlay_auto_scale": "false",
+            "video_scale_integer": "false", "video_aspect_ratio_auto": "false",
+            "aspect_ratio_index": "23",              # « personnalisé » : le jeu se cale dans le trou
+            "custom_viewport_x": str(x), "custom_viewport_y": str(y),
+            "custom_viewport_width": str(w), "custom_viewport_height": str(h),
+        })
+    else:
+        vals.update({
+            "input_overlay_enable": "false",
+            "video_scale_integer": "true" if disp.get("scale") == "integer" else "false",
+            "video_aspect_ratio_auto": "true",
+            "aspect_ratio_index": "22",              # proportions d'origine de la console
+        })
     (paths.SAVES / "captures").mkdir(parents=True, exist_ok=True)
     cfg.write_text("".join(f'{k} = "{v}"\n' for k, v in vals.items()), encoding="utf-8")
     return cfg
@@ -139,11 +208,13 @@ def _ini_update(path: Path, section: str, values: dict, replace_section=False):
         cp.write(f)
 
 
-def prepare_dolphin(settings: dict):
+def prepare_dolphin(settings: dict, cid: str = "wii"):
+    disp = display_for(settings, cid)
     conf = DOLPHIN_USER / "Config"
     ini = conf / "Dolphin.ini"
     _ini_update(ini, "Interface", {"ConfirmStop": "False"})
-    _ini_update(ini, "Display", {"Fullscreen": "True" if settings.get("fullscreen", True) else "False"})
+    _ini_update(ini, "Display", {"Fullscreen": "True" if disp["fullscreen"] else "False"})
+    _ini_update(conf / "GFX.ini", "Settings", {"InternalResolution": str(int(disp.get("dolphin_res", 3)))})
     _ini_update(ini, "Analytics", {"PermissionAsked": "True", "Enabled": "False"})
     _ini_update(ini, "AutoUpdate", {"UpdateTrack": ""})
     # Commandes automatiques (Windows) : manette si branchée, sinon clavier + souris.
@@ -154,21 +225,34 @@ def prepare_dolphin(settings: dict):
 
 
 # ------------------------------------------------------------------ commande
-def build_command(game, settings: dict):
-    """Renvoie (programme, arguments, dossier de travail)."""
+def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
+    """Renvoie (programme, arguments, dossier de travail, effet utilisé ?)."""
     c = BY_ID[game.console]
     rom = str(game.path)
     if c.engine == "dolphin":
         exe = engines.dolphin_exe()
         if not exe:
             raise LaunchError("Dolphin (moteur GameCube / Wii) n'est pas encore installé.")
-        prepare_dolphin(settings)
-        return str(exe), ["-u", str(DOLPHIN_USER), "-b", "-e", rom], str(exe.parent)
+        prepare_dolphin(settings, game.console)
+        return str(exe), ["-u", str(DOLPHIN_USER), "-b", "-e", rom], str(exe.parent), False
     exe = engines.retroarch_exe()
     if not exe:
         raise LaunchError("RetroArch (moteur principal) n'est pas encore installé.")
     core = engines.core_path(c.core)
     if not core.exists():
         raise LaunchError(f"Le moteur « {c.core} » pour {c.name} n'est pas encore installé.")
-    cfg = write_retroarch_cfg(settings.get("fullscreen", True))
-    return str(exe), ["-L", str(core), rom, "--appendconfig", str(cfg)], str(exe.parent)
+    disp = display_for(settings, game.console)
+    bezel = None
+    if disp.get("bezel", "none") != "none":
+        try:
+            from . import bezels
+            bezel = bezels.render_overlay(game.console, disp["bezel"], disp.get("bezel_color", ""),
+                                          int(disp.get("bezel_size", 82)), int(screen[0]), int(screen[1]))
+        except Exception:
+            bezel = None   # pas de contour plutôt qu'un jeu qui ne démarre pas
+    cfg = write_retroarch_cfg(disp, bezel)
+    args = ["-L", str(core), rom, "--appendconfig", str(cfg)]
+    shader = find_shader(disp.get("effect", "none")) if use_shader else None
+    if shader:
+        args += ["--set-shader", str(shader)]
+    return str(exe), args, str(exe.parent), bool(shader)

@@ -41,6 +41,18 @@ Chaque console est illustrée par une mini-photo, téléchargée au premier lanc
 Clic droit sur une console (à gauche) pour mettre ta propre photo.
 
 
+2 bis. AFFICHAGE ET CONTOURS
+---------------------------
+Clic droit sur une console (à gauche) > « Affichage et contour d'écran »,
+ou Paramètres > « Affichage des jeux » :
+  - Contour : console portable, télé rétro, borne d'arcade, néon (au choix,
+    avec la couleur et la taille de l'écran), ou aucun.
+  - Taille de l'image : remplir l'écran, ou « pixels parfaits ».
+  - Netteté (pixels nets / lissé) et effet d'écran (LCD, télé cathodique, lissage).
+  - Plein écran ou fenêtre ; pour Wii / GameCube, la résolution 3D.
+Par défaut, les consoles portables (Game Boy…) ont un contour et l'effet LCD.
+Clique sur « NINTENDO », « SEGA » ou « SNK » à gauche pour voir toute une famille.
+
 3. BIOS
 -------
 Certaines consoles ont besoin du BIOS de ta propre console :

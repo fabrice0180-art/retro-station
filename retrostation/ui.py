@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QListWidget, 
                                QListView, QAbstractItemView, QHBoxLayout, QVBoxLayout, QLabel,
                                QPushButton, QLineEdit, QStackedWidget, QFileDialog, QMessageBox,
                                QInputDialog, QProgressDialog, QDialog, QProgressBar, QCheckBox,
-                               QMenu, QAbstractButton, QGridLayout)
+                               QMenu, QAbstractButton, QGridLayout, QComboBox, QFormLayout, QSlider)
 
 from . import paths, engines, covers, launch, gamepad, photos
 from .consoles import CONSOLES, BY_ID, FAMILIES
@@ -299,11 +299,12 @@ class SettingsDialog(QDialog):
             ("Chercher jaquettes et photos manquantes", self._covers),
             ("État des BIOS", self._bios),
             ("Commandes clavier / manette", lambda: show_controls(self)),
+            ("Affichage des jeux (taille, contours…)", lambda: DisplayDialog(self.win).exec()),
         ]
         for i, (label, fn) in enumerate(buttons):
             b = QPushButton(label)
             b.clicked.connect(lambda _=False, f=fn: f())
-            grid.addWidget(b, i // 2, i % 2)
+            grid.addWidget(b, i // 2, i % 2, 1, 2 if i == len(buttons) - 1 else 1)
         lay.addLayout(grid)
 
         foot = QLabel(f"{paths.APP_NAME} {paths.VERSION} — par {paths.PUBLISHER}\nDossier : {paths.ROOT}\n"
@@ -368,6 +369,190 @@ WII / GAMECUBE
 • Souris = pointeur de la Wiimote, clic gauche = A, clic droit = B
 • Manette : stick droit = pointeur, gâchette droite = B, Start = +, Select = −
 • Quitter : Échap""")
+
+
+# ------------------------------------------------------------------ affichage par console
+class DisplayDialog(QDialog):
+    """Taille de l'écran, netteté, effets et contour, console par console."""
+
+    def __init__(self, win, cid=None):
+        super().__init__(win)
+        from . import bezels
+        self.bz = bezels
+        self.win = win
+        self.setWindowTitle("Affichage des jeux")
+        self.setMinimumWidth(760)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 20)
+        lay.setSpacing(22)
+        left = QVBoxLayout()
+        t = QLabel("Affichage des jeux", objectName="title")
+        left.addWidget(t)
+        form = QFormLayout()
+        form.setSpacing(10)
+        self.console = QComboBox()
+        for c in CONSOLES:
+            self.console.addItem(QIcon(console_card(c.id, 40, 25)), c.name, c.id)
+        form.addRow("Console", self.console)
+        self.bezel = QComboBox()
+        for k, v in bezels.STYLES.items():
+            self.bezel.addItem(v, k)
+        form.addRow("Contour", self.bezel)
+        self.color = QComboBox()
+        form.addRow("Couleur du contour", self.color)
+        self.size = QSlider(Qt.Orientation.Horizontal)
+        self.size.setRange(55, 95)
+        self.size_lab = QLabel()
+        row = QHBoxLayout()
+        row.addWidget(self.size, 1)
+        row.addWidget(self.size_lab)
+        form.addRow("Taille de l'écran", row)
+        self.size_row = row
+        self.scale = QComboBox()
+        self.scale.addItem("Remplir l'écran (proportions respectées)", "fit")
+        self.scale.addItem("Pixels parfaits (tous identiques, bords noirs)", "integer")
+        form.addRow("Taille de l'image", self.scale)
+        self.smooth = QComboBox()
+        self.smooth.addItem("Pixels nets", False)
+        self.smooth.addItem("Lissé (plus doux)", True)
+        form.addRow("Netteté", self.smooth)
+        self.effect = QComboBox()
+        for k, v in launch.EFFECTS.items():
+            self.effect.addItem(v, k)
+        form.addRow("Effet d'écran", self.effect)
+        self.mode = QComboBox()
+        self.mode.addItem("Plein écran", True)
+        self.mode.addItem("Fenêtre", False)
+        form.addRow("Affichage", self.mode)
+        self.window = QComboBox()
+        for k in (2, 3, 4, 5, 6):
+            self.window.addItem(f"× {k}", k)
+        form.addRow("Taille de la fenêtre", self.window)
+        self.res = QComboBox()
+        for k, lab in ((1, "Native (480p)"), (2, "× 2 (720p)"), (3, "× 3 (1080p)"), (4, "× 4 (1440p)"), (6, "× 6 (4K)")):
+            self.res.addItem(lab, k)
+        form.addRow("Résolution 3D", self.res)
+        self.form = form
+        left.addLayout(form)
+        self.hint = QLabel("", objectName="subtitle")
+        self.hint.setWordWrap(True)
+        left.addWidget(self.hint)
+        left.addStretch(1)
+        btns = QHBoxLayout()
+        reset = QPushButton("Valeurs par défaut")
+        reset.clicked.connect(lambda: self._reset())
+        save = QPushButton("Enregistrer", objectName="primary")
+        save.clicked.connect(lambda: self._save())
+        btns.addWidget(reset)
+        btns.addStretch(1)
+        btns.addWidget(save)
+        left.addLayout(btns)
+        lay.addLayout(left, 3)
+        right = QVBoxLayout()
+        right.addWidget(QLabel("Aperçu", objectName="subtitle"))
+        self.preview = QLabel(alignment=Qt.AlignmentFlag.AlignCenter)
+        self.preview.setFixedSize(400, 225)
+        self.preview.setStyleSheet("background:#000; border-radius: 10px;")
+        right.addWidget(self.preview)
+        right.addStretch(1)
+        lay.addLayout(right, 2)
+
+        self.edits = {}
+        self.console.currentIndexChanged.connect(lambda _i: self._load())
+        for w in (self.bezel, self.color, self.scale, self.smooth, self.effect, self.mode, self.window, self.res):
+            w.currentIndexChanged.connect(lambda _i: self._changed())
+        self.size.valueChanged.connect(lambda _v: self._changed())
+        start = cid if cid in BY_ID else (win.filter if win.filter in BY_ID else "gb")
+        self.console.setCurrentIndex(self.console.findData(start))
+        self._load()
+
+    def _cid(self):
+        return self.console.currentData()
+
+    def _set(self, combo, value):
+        i = combo.findData(value)
+        combo.setCurrentIndex(max(i, 0))
+
+    def _load(self):
+        cid = self._cid()
+        d = self.edits.get(cid) or launch.display_for(self.win.settings, cid)
+        self._loading = True
+        self._set(self.bezel, d["bezel"])
+        self._fill_colors(d["bezel"], d.get("bezel_color", ""))
+        self.size.setValue(int(d.get("bezel_size", 82)))
+        self._set(self.scale, d["scale"])
+        self._set(self.smooth, bool(d["smooth"]))
+        self._set(self.effect, d["effect"])
+        self._set(self.mode, bool(d["fullscreen"]))
+        self._set(self.window, int(d.get("window", 4)))
+        self._set(self.res, int(d.get("dolphin_res", 3)))
+        self._loading = False
+        self._refresh()
+
+    def _fill_colors(self, style, current):
+        self.color.blockSignals(True)
+        self.color.clear()
+        for name in self.bz.COLORS.get(style, {}):
+            self.color.addItem(name, name)
+        if current:
+            self._set(self.color, current)
+        self.color.blockSignals(False)
+
+    def _current(self):
+        return {"bezel": self.bezel.currentData(), "bezel_color": self.color.currentData() or "",
+                "bezel_size": self.size.value(), "scale": self.scale.currentData(),
+                "smooth": bool(self.smooth.currentData()), "effect": self.effect.currentData(),
+                "fullscreen": bool(self.mode.currentData()), "window": self.window.currentData(),
+                "dolphin_res": self.res.currentData()}
+
+    def _changed(self):
+        if getattr(self, "_loading", False):
+            return
+        style = self.bezel.currentData()
+        if self.color.count() == 0 or self.color.itemData(0) not in self.bz.COLORS.get(style, {}):
+            self._fill_colors(style, "")
+        self.edits[self._cid()] = self._current()
+        self._refresh()
+
+    def _refresh(self):
+        cid = self._cid()
+        dolphin = BY_ID[cid].engine == "dolphin"
+        style = self.bezel.currentData()
+        has_bezel = style != "none" and not dolphin
+        vis = {self.bezel: not dolphin, self.color: has_bezel, self.size: has_bezel, self.scale: not has_bezel and not dolphin,
+               self.smooth: not dolphin, self.effect: not dolphin, self.mode: not has_bezel,
+               self.window: not has_bezel and not dolphin and not self.mode.currentData(), self.res: dolphin}
+        for w, on in vis.items():
+            self.form.setRowVisible(self.size_row if w is self.size else w, on)
+        self.size_lab.setText(f"{self.size.value()} %")
+        self.hint.setText("Wii / GameCube : le contour n'est pas disponible ; la résolution 3D rend l'image "
+                          "plus fine (× 3 conseillé sur ton PC)." if dolphin else
+                          "Avec un contour, le jeu s'affiche toujours en plein écran. "
+                          "« Pixels parfaits » évite les pixels de tailles inégales.")
+        try:
+            img = self.bz.preview(cid, style if not dolphin else "none", self.color.currentData() or "",
+                                  self.size.value(), 400, 225)
+            import io
+            buf = io.BytesIO()
+            img.save(buf, "PNG")
+            pm = QPixmap()
+            pm.loadFromData(buf.getvalue())
+            self.preview.setPixmap(pm)
+        except Exception:
+            self.preview.setText("Aperçu indisponible")
+
+    def _reset(self):
+        cid = self._cid()
+        self.edits.pop(cid, None)
+        self.win.settings.setdefault("display", {}).pop(cid, None)
+        self._load()
+
+    def _save(self):
+        disp = self.win.settings.setdefault("display", {})
+        for cid, d in self.edits.items():
+            disp[cid] = d
+        save_settings(self.win.settings)
+        self.accept()
 
 
 # ------------------------------------------------------------------ fenêtre principale
@@ -531,7 +716,7 @@ class MainWindow(QMainWindow):
             if icon:
                 it.setIcon(QIcon(icon))
             if header:
-                it.setFlags(Qt.ItemFlag.NoItemFlags)
+                it.setData(Qt.ItemDataRole.UserRole, key)
                 f = QFont()
                 f.setPixelSize(11)
                 f.setBold(True)
@@ -550,11 +735,13 @@ class MainWindow(QMainWindow):
             cons = [c for c in CONSOLES if c.family == fam and counts[c.id]]
             if not cons:
                 continue
-            add(fam.upper(), None, header=True)
+            add(f"{fam.upper()}   {sum(counts[c.id] for c in cons)}", f"fam:{fam}", header=True)
             for c in cons:
                 add(f"{c.name}   {counts[c.id]}", c.id, console_card(c.id, 54, 33))
         self.sidebar.blockSignals(False)
-        self._select_filter(keep if keep in ("all", "fav", "recent") or counts.get(keep) else "all")
+        keep_ok = keep in ("all", "fav", "recent") or counts.get(keep) or (
+            keep.startswith("fam:") and any(counts[c.id] for c in CONSOLES if c.family == keep[4:]))
+        self._select_filter(keep if keep_ok else "all")
         self.fetch_covers()
 
     def _select_filter(self, key):
@@ -579,6 +766,9 @@ class MainWindow(QMainWindow):
             gs = [g for g in gs if self.lib.meta.get(g.key, {}).get("last")]
             gs.sort(key=lambda g: -self.lib.meta[g.key]["last"])
             gs = gs[:30]
+        elif self.filter.startswith("fam:"):
+            fam = self.filter[4:]
+            gs = [g for g in gs if BY_ID[g.console].family == fam]
         elif self.filter in BY_ID:
             gs = [g for g in gs if g.console == self.filter]
         if q:
@@ -587,7 +777,8 @@ class MainWindow(QMainWindow):
 
     def populate(self):
         names = {"all": "Tous les jeux", "fav": "Favoris", "recent": "Joués récemment"}
-        self.title.setText(names.get(self.filter) or BY_ID[self.filter].name)
+        self.title.setText(names.get(self.filter) or (f"Toutes les consoles {self.filter[4:]}"
+                           if self.filter.startswith("fam:") else BY_ID[self.filter].name))
         gs = self.visible_games()
         n = len(gs)
         self.subtitle.setText(f"{n} jeu" + ("x" if n > 1 else ""))
@@ -640,6 +831,7 @@ class MainWindow(QMainWindow):
         if cid not in BY_ID:
             return
         m = QMenu(self)
+        m.addAction("🖥  Affichage et contour d'écran…", lambda: DisplayDialog(self, cid).exec())
         m.addAction("📷  Mettre ma propre photo de la console…", lambda: self._set_console_photo(cid))
         if photos.custom(cid).exists():
             m.addAction("↺  Remettre la photo d'origine", lambda: self._reset_console_photo(cid))
@@ -772,7 +964,7 @@ class MainWindow(QMainWindow):
         if item and self.proc is None:
             self.play(item.data(Qt.ItemDataRole.UserRole))
 
-    def play(self, game):
+    def play(self, game, use_shader=True):
         c = BY_ID[game.console]
         miss = launch.missing_bios(game.console)
         if miss:
@@ -790,7 +982,10 @@ class MainWindow(QMainWindow):
             if box.clickedButton() != go:
                 return
         try:
-            exe, args, cwd = launch.build_command(game, self.settings)
+            scr = QApplication.primaryScreen()
+            ratio = scr.devicePixelRatio() if scr else 1.0
+            size = (round(scr.size().width() * ratio), round(scr.size().height() * ratio)) if scr else (1920, 1080)
+            exe, args, cwd, self.shader_used = launch.build_command(game, self.settings, use_shader, size)
         except launch.LaunchError as e:
             r = QMessageBox.question(self, "Moteur manquant", f"{e}\n\nL'installer maintenant ?")
             if r == QMessageBox.StandardButton.Yes:
@@ -834,6 +1029,10 @@ class MainWindow(QMainWindow):
         self.activateWindow()
         if elapsed > 5:
             self.lib.record_play(game, elapsed)
+        elif code not in (0, None) and getattr(self, "shader_used", False):
+            self.shader_used = False
+            self.status.setText("Relance sans effet d'écran…")
+            QTimer.singleShot(300, lambda g=game: self.play(g, use_shader=False))
         elif code not in (0, None):
             QMessageBox.warning(self, "Le jeu s'est arrêté",
                                 "Le jeu s'est fermé tout de suite. Le fichier est peut-être abîmé, "
@@ -850,6 +1049,8 @@ class MainWindow(QMainWindow):
         m.addAction("▶  Jouer", lambda: self.play(g))
         m.addAction("☆  Retirer des favoris" if fav else "⭐  Ajouter aux favoris", lambda: self._fav(g))
         m.addAction("🖼  Choisir une jaquette…", lambda: self._pick_cover(g))
+        m.addAction(f"🖥  Affichage {BY_ID[g.console].name} (taille, contour…)",
+                    lambda: DisplayDialog(self, g.console).exec())
         m.addAction("📂  Afficher le fichier", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(g.path.parent))))
         m.addSeparator()
         m.addAction("🗑  Supprimer de la bibliothèque", lambda: self._delete(g))

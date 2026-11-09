@@ -62,8 +62,27 @@ def dolphin_exe():
     return app / "Contents/MacOS/Dolphin" if app else None
 
 
+SHADERS_DIR = paths.ENGINES / "shaders"
+
+
+def shaders_installed():
+    return (SHADERS_DIR / "shaders_slang").exists() or (SHADERS_DIR / "shaders_glsl").exists()
+
+
+def install_shaders(progress=None):
+    """Effets d'écran (LCD, télé cathodique, lissage) de la bibliothèque libre libretro."""
+    SHADERS_DIR.mkdir(parents=True, exist_ok=True)
+    for i, pack in enumerate(("shaders_slang", "shaders_glsl")):
+        with tempfile.TemporaryDirectory() as td:
+            z = fetch_first([f"{BUILDBOT}/assets/frontend/{pack}.zip"], Path(td) / "s.zip",
+                            (lambda f, i=i: progress((i + f) / 2)) if progress else None)
+            with zipfile.ZipFile(z) as zf:
+                zf.extractall(SHADERS_DIR / pack)
+
+
 def status():
     return {
+        "shaders": shaders_installed(),
         "retroarch": retroarch_exe() is not None,
         "cores": {c: core_path(c).exists() for c in RETROARCH_CORES},
         "dolphin": dolphin_exe() is not None,
@@ -72,7 +91,7 @@ def status():
 
 def everything_installed():
     s = status()
-    return s["retroarch"] and s["dolphin"] and all(s["cores"].values())
+    return s["retroarch"] and s["dolphin"] and s["shaders"] and all(s["cores"].values())
 
 
 # ------------------------------------------------------------------ téléchargement
@@ -218,6 +237,8 @@ def install_all(report=None, force=False):
             steps.append((f"Cœur {core}", lambda p, c=core: install_core(c, p)))
     if force or not s["dolphin"]:
         steps.append(("Dolphin (GameCube / Wii)", install_dolphin))
+    if force or not s["shaders"]:
+        steps.append(("Effets d'écran", install_shaders))
     errors = []
     n = max(len(steps), 1)
     for i, (label, fn) in enumerate(steps):
