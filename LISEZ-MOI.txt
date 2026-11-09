@@ -51,6 +51,8 @@ ou Paramètres > « Affichage des jeux » :
   - Netteté (pixels nets / lissé) et effet d'écran (LCD, télé cathodique, lissage).
   - Plein écran ou fenêtre ; pour Wii / GameCube, la résolution 3D.
 Par défaut, les consoles portables (Game Boy…) ont un contour et l'effet LCD.
+Contour « Mon image de contour » : choisis un PNG (idéalement 1920 x 1080) dont la
+zone de l'écran est transparente ; le jeu se cale tout seul dedans.
 Clique sur « NINTENDO », « SEGA » ou « SNK » à gauche pour voir toute une famille.
 
 3. BIOS

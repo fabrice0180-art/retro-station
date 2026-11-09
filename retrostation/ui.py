@@ -400,6 +400,9 @@ class DisplayDialog(QDialog):
         form.addRow("Contour", self.bezel)
         self.color = QComboBox()
         form.addRow("Couleur du contour", self.color)
+        self.pick = QPushButton("Choisir mon image de contour (PNG)…")
+        self.pick.clicked.connect(lambda: self._pick_custom())
+        form.addRow("", self.pick)
         self.size = QSlider(Qt.Orientation.Horizontal)
         self.size.setRange(55, 95)
         self.size_lab = QLabel()
@@ -519,7 +522,9 @@ class DisplayDialog(QDialog):
         dolphin = BY_ID[cid].engine == "dolphin"
         style = self.bezel.currentData()
         has_bezel = style != "none" and not dolphin
-        vis = {self.bezel: not dolphin, self.color: has_bezel, self.size: has_bezel, self.scale: not has_bezel and not dolphin,
+        custom = style == "custom"
+        vis = {self.bezel: not dolphin, self.color: has_bezel and not custom, self.size: has_bezel and not custom,
+               self.pick: has_bezel and custom, self.scale: not has_bezel and not dolphin,
                self.smooth: not dolphin, self.effect: not dolphin, self.mode: not has_bezel,
                self.window: not has_bezel and not dolphin and not self.mode.currentData(), self.res: dolphin}
         for w, on in vis.items():
@@ -527,7 +532,8 @@ class DisplayDialog(QDialog):
         self.size_lab.setText(f"{self.size.value()} %")
         self.hint.setText("Wii / GameCube : le contour n'est pas disponible ; la résolution 3D rend l'image "
                           "plus fine (× 3 conseillé sur ton PC)." if dolphin else
-                          "Avec un contour, le jeu s'affiche toujours en plein écran. "
+                          "Avec un contour, le jeu s'affiche toujours en plein écran. Ton image de contour : "
+                          "un PNG (idéalement 1920 × 1080) dont la zone de l'écran est transparente. "
                           "« Pixels parfaits » évite les pixels de tailles inégales.")
         try:
             img = self.bz.preview(cid, style if not dolphin else "none", self.color.currentData() or "",
@@ -540,6 +546,18 @@ class DisplayDialog(QDialog):
             self.preview.setPixmap(pm)
         except Exception:
             self.preview.setText("Aperçu indisponible")
+
+    def _pick_custom(self):
+        cid = self._cid()
+        f, _ = QFileDialog.getOpenFileName(self, f"Image de contour pour {BY_ID[cid].name}", str(Path.home()),
+                                           "Images PNG (*.png)")
+        if not f:
+            return
+        err = self.bz.import_custom(cid, f)
+        if err:
+            QMessageBox.warning(self, "Contour", err)
+            return
+        self._changed()
 
     def _reset(self):
         cid = self._cid()

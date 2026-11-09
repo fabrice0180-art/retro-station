@@ -20,7 +20,41 @@ STYLES = {
     "tv": "Télé rétro",
     "arcade": "Borne d'arcade",
     "neon": "Néon",
+    "custom": "Mon image de contour (PNG)",
 }
+CUSTOM_DIR = paths.ROOT / "Contours"
+
+
+def custom_file(cid):
+    return CUSTOM_DIR / f"{cid}.png"
+
+
+def import_custom(cid, src):
+    """Copie une image de contour choisie par l'utilisateur. Elle doit avoir une zone transparente
+    (l'écran). Renvoie un message d'erreur, ou "" si tout va bien."""
+    try:
+        img = Image.open(src).convert("RGBA")
+    except Exception:
+        return "Ce fichier n'est pas une image lisible."
+    if not custom_hole_norm(img):
+        return ("Cette image n'a pas de zone transparente pour l'écran.\n"
+                "Il faut un PNG dont la partie « écran » est transparente.")
+    CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(custom_file(cid))
+    return ""
+
+
+def custom_hole_norm(img):
+    """Position de la zone transparente (proportions 0..1), ou None."""
+    a = img.getchannel("A").point(lambda v: 255 if v < 24 else 0)
+    bb = a.getbbox()
+    if not bb:
+        return None
+    x0, y0, x1, y1 = bb
+    W, H = img.size
+    if (x1 - x0) < W * 0.15 or (y1 - y0) < H * 0.15:
+        return None
+    return x0 / W, y0 / H, (x1 - x0) / W, (y1 - y0) / H
 COLORS = {
     "handheld": {"Gris clair": "#c8c8c2", "Noir": "#2c2c33", "Violet": "#6d52a8", "Jaune": "#e6c23c",
                  "Turquoise": "#27aeb0", "Rouge": "#c43a3f", "Blanc": "#ecebe6"},
@@ -290,8 +324,26 @@ def hole_rect(cid, size_pct, W, H, style):
     return int(round(x)), int(round(y)), int(round(w)), int(round(h))
 
 
+def _render_custom(cid, W, H):
+    f = custom_file(cid)
+    if not f.exists():
+        return None
+    src = Image.open(f).convert("RGBA")
+    norm = custom_hole_norm(src)
+    if not norm:
+        return None
+    img = src.resize((W, H), Image.LANCZOS)
+    nx, ny, nw, nh = norm
+    return img, (int(nx * W), int(ny * H), max(1, int(nw * W)), max(1, int(nh * H)))
+
+
 def render_image(cid, style, color, size_pct, W, H):
     """Renvoie (image RGBA, trou (x, y, w, h))."""
+    if style == "custom":
+        res = _render_custom(cid, W, H)
+        if res:
+            return res
+        style = "handheld"
     style = style if style in DRAW else "handheld"
     base = _rgb(COLORS[style].get(color) or next(iter(COLORS[style].values())))
     hole = hole_rect(cid, size_pct, W, H, style)
@@ -306,12 +358,13 @@ def render_image(cid, style, color, size_pct, W, H):
 
 def render_overlay(cid, style, color, size_pct, W, H):
     """Crée (ou réutilise) le contour pour cet écran. Renvoie (fichier .cfg, trou)."""
-    key = hashlib.md5(f"v1|{cid}|{style}|{color}|{size_pct}|{W}x{H}".encode()).hexdigest()[:12]
+    stamp = custom_file(cid).stat().st_mtime if style == "custom" and custom_file(cid).exists() else 0
+    key = hashlib.md5(f"v1|{cid}|{style}|{color}|{size_pct}|{W}x{H}|{stamp}".encode()).hexdigest()[:12]
     out = paths.ENGINES / "contours"
     out.mkdir(parents=True, exist_ok=True)
     png, cfg = out / f"{key}.png", out / f"{key}.cfg"
     hole = hole_rect(cid, size_pct, W, H, style)
-    if not (png.exists() and cfg.exists()):
+    if style == "custom" or not (png.exists() and cfg.exists()):
         img, hole = render_image(cid, style, color, size_pct, W, H)
         img.save(png)
         cfg.write_text(
