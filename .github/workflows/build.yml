@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  RS_VERSION: "1.3.1"
+  RS_VERSION: "1.4.0"
 
 jobs:
   windows:
@@ -24,6 +24,8 @@ jobs:
           python-version: "3.12"
       - name: Dépendances
         run: pip install -r requirements.txt pyinstaller
+      - name: Test de l'interface (sans écran)
+        run: python tests/smoke_ui.py
       - name: Application autonome
         run: pyinstaller --noconfirm --windowed --name RetroStation --icon assets/icon.ico --add-data "assets;assets" RetroStation.pyw
       - name: Inno Setup

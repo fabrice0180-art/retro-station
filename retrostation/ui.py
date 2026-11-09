@@ -8,15 +8,17 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import (Qt, QSize, QTimer, QObject, Signal, QRunnable, QThreadPool,
+from PySide6.QtCore import (Qt, QSize, QTimer, QObject, Signal, QRunnable, QThreadPool, QAbstractListModel,
+                            QModelIndex,
                             QProcess, QUrl, QRectF, QEvent)
 from PySide6.QtGui import (QIcon, QPixmap, QPainter, QColor, QLinearGradient, QPainterPath,
-                           QFont, QKeyEvent, QDesktopServices, QPalette, QPen)
+                           QFont, QKeyEvent, QDesktopServices, QPalette, QPen, QImage, QFontMetrics)
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QListWidget, QListWidgetItem,
                                QListView, QAbstractItemView, QHBoxLayout, QVBoxLayout, QLabel,
                                QPushButton, QLineEdit, QStackedWidget, QFileDialog, QMessageBox,
                                QInputDialog, QProgressDialog, QDialog, QProgressBar, QCheckBox,
-                               QMenu, QAbstractButton, QGridLayout, QComboBox, QFormLayout, QSlider)
+                               QMenu, QAbstractButton, QGridLayout, QComboBox, QFormLayout, QSlider,
+                               QStyledItemDelegate, QStyle)
 
 from . import paths, engines, covers, launch, gamepad, photos
 from .consoles import CONSOLES, BY_ID, FAMILIES
@@ -161,84 +163,63 @@ def console_card(cid: str, w: int, h: int) -> QPixmap:
     return pm
 
 
-_tile_cache = {}
-_placeholder_cache = {}
+_card_images = {}      # cartes des consoles, préparées une fois (lisibles depuis les tâches de fond)
+TILE_CACHE_MAX = 900
 
 
-def _mini_cover(cover: Path) -> QPixmap:
-    """Jaquette réduite (gardée sur disque) : bien plus rapide à charger que l'image d'origine."""
+def prepare_cards():
+    _card_images.clear()
+    for c in CONSOLES:
+        for w, h in ((136, 86), (52, 32)):
+            _card_images[(c.id, w, h)] = console_card(c.id, w, h).toImage()
+
+
+def _mini_cover_image(cover: Path) -> QImage:
+    """Jaquette réduite, gardée sur disque : bien plus rapide à relire que l'image d'origine."""
     mini = cover.parent / ".mini" / (cover.stem + ".png")
     try:
         if mini.exists() and mini.stat().st_mtime >= cover.stat().st_mtime:
-            pm = QPixmap(str(mini))
-            if not pm.isNull():
-                return pm
+            img = QImage(str(mini))
+            if not img.isNull():
+                return img
     except OSError:
         pass
-    pm = QPixmap(str(cover))
-    if pm.isNull():
-        return pm
-    pm = pm.scaled(TW * 2, TH * 2, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    img = QImage(str(cover))
+    if img.isNull():
+        return img
+    img = img.scaled(TW, TH, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
     try:
         mini.parent.mkdir(parents=True, exist_ok=True)
-        pm.save(str(mini), "PNG")
+        img.save(str(mini), "PNG")
     except OSError:
         pass
-    return pm
+    return img
 
 
-def tile_icon(game) -> QIcon:
-    cover = covers.best_cover(game)
-    try:
-        stamp = cover.stat().st_mtime if cover else 0
-    except OSError:
-        stamp = 0
-    key = (game.key, str(cover), stamp)
-    ic = _tile_cache.get(key)
-    if ic is None:
-        ic = QIcon(make_tile(game, cover))
-        _tile_cache[key] = ic
-    return ic
-
-
-def placeholder_icon(cid) -> QIcon:
-    ic = _placeholder_cache.get(cid)
-    if ic is None:
-        pm = QPixmap(TW, TH)
-        pm.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(BY_ID[cid].color).darker(160))
-        p.drawRoundedRect(QRectF(0, 0, TW, TH), 14, 14)
-        p.end()
-        ic = _placeholder_cache[cid] = QIcon(pm)
-    return ic
-
-
-def make_tile(game, cover: Path | None) -> QPixmap:
+def build_tile(game, cover) -> QImage:
+    """Dessine la vignette d'un jeu (appelé en tâche de fond)."""
     c = BY_ID[game.console]
-    pm = QPixmap(TW, TH)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
+    out = QImage(TW, TH, QImage.Format.Format_ARGB32_Premultiplied)
+    out.fill(Qt.GlobalColor.transparent)
+    p = QPainter(out)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     clip = QPainterPath()
     clip.addRoundedRect(QRectF(0, 0, TW, TH), 14, 14)
     p.setClipPath(clip)
-    img = _mini_cover(cover) if cover else QPixmap()
+    img = _mini_cover_image(cover) if cover else QImage()
     if not img.isNull():
         p.fillRect(0, 0, TW, TH, QColor("#0d0e14"))
-        s = img.scaled(TW, TH, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        p.drawPixmap((TW - s.width()) // 2, (TH - s.height()) // 2, s)
+        p.drawImage((TW - img.width()) // 2, (TH - img.height()) // 2, img)
     else:
         base = QColor(c.color)
         g = QLinearGradient(0, 0, TW, TH)
         g.setColorAt(0, base.lighter(135))
         g.setColorAt(1, base.darker(190))
         p.fillRect(0, 0, TW, TH, g)
-        ic = console_card(c.id, 136, 86)
-        p.drawPixmap((TW - ic.width()) // 2, 34, ic)
+        card = _card_images.get((c.id, 136, 86))
+        if card is not None:
+            p.drawImage((TW - card.width()) // 2, 34, card)
         f = QFont()
         f.setPixelSize(15)
         f.setBold(True)
@@ -247,15 +228,112 @@ def make_tile(game, cover: Path | None) -> QPixmap:
         p.drawText(QRectF(12, 132, TW - 24, TH - 150),
                    int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop) | int(Qt.TextFlag.TextWordWrap),
                    game.title)
-    # mini-photo de la console en bas à droite
     p.setClipping(False)
-    badge = console_card(c.id, 52, 32)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor(0, 0, 0, 120))
-    p.drawRoundedRect(QRectF(TW - 59, TH - 39, 56, 36), 8, 8)
-    p.drawPixmap(TW - 57, TH - 37, badge)
+    badge = _card_images.get((c.id, 52, 32))
+    if badge is not None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 120))
+        p.drawRoundedRect(QRectF(TW - 59, TH - 39, 56, 36), 8, 8)
+        p.drawImage(TW - 57, TH - 37, badge)
     p.end()
-    return pm
+    return out
+
+
+class TileSignals(QObject):
+    ready = Signal(str, QImage)
+
+
+class TileJob(QRunnable):
+    def __init__(self, key, game, cover, signals):
+        super().__init__()
+        self.key, self.game, self.cover, self.signals = key, game, cover, signals
+
+    def run(self):
+        try:
+            img = build_tile(self.game, self.cover)
+        except Exception:
+            img = QImage()
+        self.signals.ready.emit(self.key, img)
+
+
+class GameModel(QAbstractListModel):
+    """Liste des jeux affichés : filtrer = remplacer la liste, c'est instantané."""
+
+    def __init__(self):
+        super().__init__()
+        self.games = []
+
+    def rowCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else len(self.games)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or index.row() >= len(self.games):
+            return None
+        g = self.games[index.row()]
+        if role == Qt.ItemDataRole.DisplayRole:
+            return g.title
+        if role == Qt.ItemDataRole.UserRole:
+            return g
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return f"{g.title}\n{BY_ID[g.console].name}" + (f" · {g.region}" if g.region else "") + f"\n{g.path.name}"
+        return None
+
+    def set_games(self, games):
+        self.beginResetModel()
+        self.games = list(games)
+        self.endResetModel()
+
+    def row_of(self, key):
+        for i, g in enumerate(self.games):
+            if g.key == key:
+                return i
+        return -1
+
+
+class TileDelegate(QStyledItemDelegate):
+    """Ne dessine que les vignettes visibles à l'écran."""
+
+    def __init__(self, win):
+        super().__init__(win)
+        self.win = win
+        self.font = QFont()
+        self.font.setPixelSize(13)
+
+    def sizeHint(self, option, index):
+        return QSize(TW + 26, TH + 52)
+
+    def paint(self, p, option, index):
+        g = index.data(Qt.ItemDataRole.UserRole)
+        if g is None:
+            return
+        r = option.rect
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        if selected or hover:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#2b3046" if selected else "#1c1f2c"))
+            p.drawRoundedRect(QRectF(r.adjusted(2, 2, -2, -2)), 14, 14)
+        x, y = r.x() + (r.width() - TW) // 2, r.y() + 7
+        pm = self.win.tile_for(g)
+        if pm is not None:
+            p.drawPixmap(x, y, pm)
+        else:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(BY_ID[g.console].color).darker(170))
+            p.drawRoundedRect(QRectF(x, y, TW, TH), 14, 14)
+        if selected:
+            p.setPen(QPen(QColor(ACCENT), 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(x - 1, y - 1, TW + 2, TH + 2), 15, 15)
+        p.setFont(self.font)
+        p.setPen(QColor("white" if selected else "#cfd3e3"))
+        fm = QFontMetrics(self.font)
+        text = fm.elidedText(g.title, Qt.TextElideMode.ElideRight, (r.width() - 14) * 2 - 20)
+        p.drawText(QRectF(r.x() + 7, y + TH + 5, r.width() - 14, 38),
+                   int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop) | int(Qt.TextFlag.TextWordWrap), text)
+        p.restore()
 
 
 # ------------------------------------------------------------------ installation des moteurs
@@ -658,8 +736,17 @@ class MainWindow(QMainWindow):
         self.started = 0.0
         self.hold_since = None
         self.tasks = []
-        self.items = {}
-        self.cover_pool = ThreadPoolExecutor(4)
+        self.cover_pool = ThreadPoolExecutor(3)
+        self.tile_pool = QThreadPool()
+        self.tile_pool.setMaxThreadCount(3)
+        self.tile_signals = TileSignals()
+        self.tile_signals.ready.connect(self._tile_ready)
+        self.tile_cache = {}          # clé -> QPixmap
+        self.tile_pending = set()
+        self.cover_of = {}            # jeu -> (jaquette, date)
+        self.repaint_timer = QTimer(self, singleShot=True, interval=40,
+                                    timeout=lambda: self.grid.viewport().update())
+        prepare_cards()
         self.cover_pending = set()
         self.cover_signals = Signals()
         self.cover_signals.cover.connect(self._cover_ready)
@@ -681,6 +768,8 @@ class MainWindow(QMainWindow):
         self.pad_timer.start()
         QTimer.singleShot(400, self._first_run)
         QTimer.singleShot(200, self.fetch_photos)
+        for eff in ("lcd", "crt", "smooth"):      # prépare les effets d'écran : lancement plus rapide
+            self.cover_pool.submit(launch.find_shader, eff)
 
     # ---------------- construction
     def _build(self):
@@ -716,6 +805,7 @@ class MainWindow(QMainWindow):
         self.sidebar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.sidebar.customContextMenuRequested.connect(self._side_menu)
         self.sidebar.currentItemChanged.connect(self._side_changed)
+        self.sidebar.itemClicked.connect(lambda it: self._side_changed(it, None))
         self.sidebar.installEventFilter(self)
         sv.addWidget(self.sidebar, 1)
         gear = QPushButton("⚙  Paramètres")
@@ -748,24 +838,24 @@ class MainWindow(QMainWindow):
         mv.addLayout(top)
 
         self.stack = QStackedWidget()
-        self.grid = QListWidget(objectName="grid")
+        self.grid = QListView(objectName="grid")
         g = self.grid
+        self.model = GameModel()
+        g.setModel(self.model)
+        g.setItemDelegate(TileDelegate(self))
         g.setViewMode(QListView.ViewMode.IconMode)
         g.setResizeMode(QListView.ResizeMode.Adjust)
         g.setMovement(QListView.Movement.Static)
-        g.setIconSize(QSize(TW, TH))
         g.setGridSize(QSize(TW + 30, TH + 58))
-        g.setWordWrap(True)
         g.setUniformItemSizes(True)
-        g.setLayoutMode(QListView.LayoutMode.Batched)
-        g.setBatchSize(60)
-        g.verticalScrollBar().valueChanged.connect(lambda _v: self._schedule_tiles())
-        g.setSpacing(6)
+        g.setMouseTracking(True)
+        g.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         g.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
         g.setAcceptDrops(False)
         g.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        g.itemClicked.connect(self._play_item)
-        g.itemActivated.connect(self._play_item)
+        g.verticalScrollBar().setSingleStep(40)
+        g.clicked.connect(self._play_index)
+        g.activated.connect(self._play_index)
         g.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         g.customContextMenuRequested.connect(self._context_menu)
         g.installEventFilter(self)
@@ -872,69 +962,80 @@ class MainWindow(QMainWindow):
         self.title.setText(names.get(self.filter) or (f"Toutes les consoles {self.filter[4:]}"
                            if self.filter.startswith("fam:") else BY_ID[self.filter].name))
         gs = self.visible_games()
-        self.grid.setUpdatesEnabled(False)
-        self.grid.clear()
-        self.items = {}
-        for g in gs:
-            it = QListWidgetItem(placeholder_icon(g.console), g.title)
-            it.setData(Qt.ItemDataRole.UserRole, g)
-            tip = f"{g.title}\n{BY_ID[g.console].name}" + (f" · {g.region}" if g.region else "")
-            it.setToolTip(tip + f"\n{g.path.name}")
-            it.setSizeHint(QSize(TW + 26, TH + 52))
-            self.grid.addItem(it)
-            self.items[g.key] = it
-        self.grid.setUpdatesEnabled(True)
+        q = self.search.text().strip().lower()
+        if q:
+            gs = [g for g in gs if q in g.title.lower()]
+        self.model.set_games(gs)
+        n = len(gs)
+        self.subtitle.setText(f"{n} jeu" + ("x" if n > 1 else ""))
         self.stack.setCurrentWidget(self.empty_page if not self.lib.games else self.grid)
-        self.apply_search()
-        self.pending_tiles = list(self.items.values())
-        self._schedule_tiles()
+        if n:
+            self.grid.setCurrentIndex(self.model.index(0))
+            self.grid.scrollToTop()
 
     def apply_search(self):
-        q = self.search.text().strip().lower()
-        shown = 0
-        for i in range(self.grid.count()):
-            it = self.grid.item(i)
-            hide = bool(q) and q not in it.text().lower()
-            it.setHidden(hide)
-            shown += not hide
-        self.subtitle.setText(f"{shown} jeu" + ("x" if shown > 1 else ""))
-        first = next((self.grid.item(i) for i in range(self.grid.count()) if not self.grid.item(i).isHidden()), None)
-        if first:
-            self.grid.setCurrentItem(first)
-        self._schedule_tiles()
+        self.populate()
 
-    # ---------------- dessin progressif des jaquettes (l'interface reste fluide)
-    def _schedule_tiles(self):
-        if not hasattr(self, "tile_timer"):
-            self.tile_timer = QTimer(self, interval=0, timeout=self._render_tiles)
-        if getattr(self, "pending_tiles", None) and not self.tile_timer.isActive():
-            self.tile_timer.start()
+    # ---------------- vignettes : préparées en tâche de fond, seulement pour ce qui est à l'écran
+    def _cover_info(self, g):
+        info = self.cover_of.get(g.key)
+        if info is None:
+            cover = covers.best_cover(g)
+            try:
+                stamp = cover.stat().st_mtime if cover else 0
+            except OSError:
+                stamp = 0
+            info = self.cover_of[g.key] = (cover, stamp)
+        return info
 
-    def _render_tiles(self):
-        todo = self.pending_tiles
-        if not todo:
-            self.tile_timer.stop()
+    def tile_for(self, g):
+        cover, stamp = self._cover_info(g)
+        key = f"{g.key}|{cover}|{stamp}"
+        pm = self.tile_cache.get(key)
+        if pm is not None:
+            return pm
+        if key not in self.tile_pending:
+            self.tile_pending.add(key)
+            self.tile_pool.start(TileJob(key, g, cover, self.tile_signals))
+        return None
+
+    def _tile_ready(self, key, img):
+        self.tile_pending.discard(key)
+        if img.isNull():
             return
-        view = self.grid.viewport().rect().adjusted(0, -TH, 0, TH * 2)
-        visible = [it for it in todo if not it.isHidden() and view.intersects(self.grid.visualItemRect(it))]
-        batch = (visible or [it for it in todo if not it.isHidden()] or todo)[:24]
-        for it in batch:
-            g = it.data(Qt.ItemDataRole.UserRole)
-            it.setIcon(tile_icon(g))
-        done = set(map(id, batch))
-        self.pending_tiles = [it for it in todo if id(it) not in done]
+        if len(self.tile_cache) > TILE_CACHE_MAX:
+            for k in list(self.tile_cache)[: TILE_CACHE_MAX // 3]:
+                del self.tile_cache[k]
+        self.tile_cache[key] = QPixmap.fromImage(img)
+        if not self.repaint_timer.isActive():
+            self.repaint_timer.start()
+
+    def _forget_tiles(self, key=None):
+        if key is None:
+            self.tile_cache.clear()
+            self.cover_of.clear()
+        else:
+            self.cover_of.pop(key, None)
+            for k in [k for k in self.tile_cache if k.startswith(key + "|")]:
+                del self.tile_cache[k]
+        self.grid.viewport().update()
+
+    def current_game(self):
+        idx = self.grid.currentIndex()
+        return idx.data(Qt.ItemDataRole.UserRole) if idx.isValid() else None
 
     # ---------------- jaquettes
     def fetch_covers(self):
-        todo = [g for g in self.lib.games if g.key not in self.cover_pending
-                and not covers.best_cover(g) and not covers.cover_file(g).with_suffix(".absent").exists()]
-        self.cover_pending.update(g.key for g in todo)
+        games = [g for g in self.lib.games if g.key not in self.cover_pending]
+        self.cover_pending.update(g.key for g in games)
         sig = self.cover_signals
 
         def job(g):
+            if covers.best_cover(g) or covers.cover_file(g).with_suffix(".absent").exists():
+                return
             if covers.download_cover(g):
                 sig.cover.emit(g.key)
-        for g in todo:
+        for g in games:
             self.cover_pool.submit(job, g)
 
     def fetch_photos(self):
@@ -951,7 +1052,8 @@ class MainWindow(QMainWindow):
     def _photos_ready(self, got):
         if got:
             _icon_cache.clear()
-            _tile_cache.clear()
+            prepare_cards()
+            self._forget_tiles()
             self.refresh()
 
     def _side_menu(self, pos):
@@ -1004,14 +1106,12 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
         _icon_cache.clear()
-        _tile_cache.clear()
+        prepare_cards()
+        self._forget_tiles()
         self.refresh()
 
     def _cover_ready(self, key):
-        it = self.items.get(key)
-        if it:
-            g = it.data(Qt.ItemDataRole.UserRole)
-            it.setIcon(tile_icon(g))
+        self._forget_tiles(key)
 
     # ---------------- import
     def import_files(self):
@@ -1112,9 +1212,10 @@ class MainWindow(QMainWindow):
             if r == QMessageBox.StandardButton.Yes:
                 EngineDialog(self).exec()
 
-    def _play_item(self, item):
-        if item and self.proc is None:
-            self.play(item.data(Qt.ItemDataRole.UserRole))
+    def _play_index(self, index):
+        g = index.data(Qt.ItemDataRole.UserRole) if index.isValid() else None
+        if g and self.proc is None:
+            self.play(g)
 
     def play(self, game, use_shader=True):
         c = BY_ID[game.console]
@@ -1191,10 +1292,10 @@ class MainWindow(QMainWindow):
 
     # ---------------- clic droit
     def _context_menu(self, pos):
-        it = self.grid.itemAt(pos)
-        if not it:
+        idx = self.grid.indexAt(pos)
+        if not idx.isValid():
             return
-        g = it.data(Qt.ItemDataRole.UserRole)
+        g = idx.data(Qt.ItemDataRole.UserRole)
         fav = self.lib.meta.get(g.key, {}).get("fav")
         m = QMenu(self)
         m.addAction("▶  Jouer", lambda: self.play(g))
@@ -1288,9 +1389,9 @@ class MainWindow(QMainWindow):
         if pressed & gamepad.B:
             self._key(Qt.Key.Key_Escape)
         if pressed & gamepad.Y and QApplication.activeWindow() is self:
-            it = self.grid.currentItem()
-            if it:
-                self._fav(it.data(Qt.ItemDataRole.UserRole))
+            g = self.current_game()
+            if g:
+                self._fav(g)
         if pressed & (gamepad.LB | gamepad.RB) and QApplication.activeWindow() is self:
             self._cycle_console(-1 if pressed & gamepad.LB else 1)
         self.pad_prev = b
@@ -1309,9 +1410,9 @@ class MainWindow(QMainWindow):
         if w is self.sidebar and dirs & gamepad.RIGHT:
             self.grid.setFocus()
             return
-        if w is self.grid and dirs & gamepad.LEFT and self.grid.currentRow() >= 0:
+        if w is self.grid and dirs & gamepad.LEFT and self.grid.currentIndex().isValid():
             # bord gauche de la grille -> retour à la liste des consoles
-            r = self.grid.visualItemRect(self.grid.currentItem())
+            r = self.grid.visualRect(self.grid.currentIndex())
             if r.left() < TW // 2:
                 self.sidebar.setFocus()
                 return
@@ -1324,7 +1425,7 @@ class MainWindow(QMainWindow):
     def _pad_accept(self):
         w = QApplication.focusWidget()
         if w is self.grid:
-            self._play_item(self.grid.currentItem())
+            self._play_index(self.grid.currentIndex())
         elif w is self.sidebar:
             self.grid.setFocus()
         elif isinstance(w, QAbstractButton):
