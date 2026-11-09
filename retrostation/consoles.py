@@ -73,6 +73,9 @@ CONSOLES = [
             thumbs="Sega - Dreamcast",
             bios_optional=("dc/dc_boot.bin", "dc/dc_flash.bin"),
             bios_note="dc/dc_boot.bin et dc/dc_flash.bin (recommandés)"),
+    # ---------------- Sony ----------------
+    Console("psp", "PSP", "Sony", "PSP", "#1f2a44", "handheld", "retroarch", "ppsspp",
+            (".iso", ".cso", ".pbp", ".chd"), thumbs="Sony - PlayStation Portable"),
     # ---------------- SNK ----------------
     Console("neogeo", "Neo Geo", "SNK", "NEO\nGEO", "#c9a227", "arcade", "retroarch", "fbneo",
             (".zip", ".7z"), thumbs="SNK - Neo Geo",
@@ -94,7 +97,7 @@ CONSOLES = [
 ]
 
 BY_ID = {c.id: c for c in CONSOLES}
-FAMILIES = ["Nintendo", "Sega", "SNK"]
+FAMILIES = ["Nintendo", "Sega", "Sony", "SNK"]
 
 # Fichiers BIOS reconnus à l'import -> chemin dans le dossier BIOS
 BIOS_FILES = {

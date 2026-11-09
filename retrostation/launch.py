@@ -25,7 +25,7 @@ def missing_bios(cid: str):
 
 
 # ------------------------------------------------------------------ RetroArch
-HANDHELDS = {"gb", "gbc", "gba", "gg", "ngp", "ngpc"}
+HANDHELDS = {"gb", "gbc", "gba", "gg", "ngp", "ngpc", "psp"}
 DISPLAY_DEFAULTS = {"fullscreen": True, "bezel": "none", "bezel_color": "", "bezel_size": 82,
                     "scale": "fit", "smooth": False, "effect": "none", "window": 4, "dolphin_res": 3}
 EFFECTS = {"none": "Aucun", "lcd": "Écran LCD (grille de pixels)", "crt": "Télé cathodique (lignes)",
@@ -72,8 +72,9 @@ def find_shader(effect: str):
     return found
 
 
-def write_retroarch_cfg(disp: dict, bezel=None) -> Path:
+def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True) -> Path:
     """bezel = (fichier .cfg du contour, (x, y, w, h) du trou) ou None."""
+    paths.ENGINES.mkdir(parents=True, exist_ok=True)
     cfg = paths.ENGINES / "retrostation.cfg"
     vals = {
         "video_fullscreen": "true" if (disp["fullscreen"] or bezel) else "false",
@@ -88,9 +89,13 @@ def write_retroarch_cfg(disp: dict, bezel=None) -> Path:
         "savestate_auto_save": "true",              # reprendre là où on s'était arrêté
         "savestate_auto_load": "true",
         "input_autodetect_enable": "true",          # manettes reconnues automatiquement
-        "input_menu_toggle_gamepad_combo": "2",     # L3 + R3 = menu
-        "input_quit_gamepad_combo": "4",            # Select + Start = quitter
-        "quit_press_twice": "false",
+        "input_menu_toggle_gamepad_combo": "4",     # Select + Start = menu (commandes, sauvegardes, quitter)
+        "input_quit_gamepad_combo": "0",
+        "quit_press_twice": "true" if confirm_quit else "false",   # Échap deux fois = quitter
+        "input_remap_binds_enable": "true",
+        "input_remapping_directory": str(paths.SAVES / "commandes"),
+        "remap_save_on_exit": "true",               # les commandes modifiées en jeu sont gardées
+        "notification_show_remap_load": "true",
         "pause_nonactive": "false",
         "menu_mouse_enable": "true",
         "menu_pointer_enable": "true",
@@ -117,6 +122,7 @@ def write_retroarch_cfg(disp: dict, bezel=None) -> Path:
             "aspect_ratio_index": "22",              # proportions d'origine de la console
         })
     (paths.SAVES / "captures").mkdir(parents=True, exist_ok=True)
+    (paths.SAVES / "commandes").mkdir(parents=True, exist_ok=True)
     cfg.write_text("".join(f'{k} = "{v}"\n' for k, v in vals.items()), encoding="utf-8")
     return cfg
 
@@ -212,13 +218,13 @@ def prepare_dolphin(settings: dict, cid: str = "wii"):
     disp = display_for(settings, cid)
     conf = DOLPHIN_USER / "Config"
     ini = conf / "Dolphin.ini"
-    _ini_update(ini, "Interface", {"ConfirmStop": "False"})
+    _ini_update(ini, "Interface", {"ConfirmStop": "True" if settings.get("confirm_quit", True) else "False"})
     _ini_update(ini, "Display", {"Fullscreen": "True" if disp["fullscreen"] else "False"})
     _ini_update(conf / "GFX.ini", "Settings", {"InternalResolution": str(int(disp.get("dolphin_res", 3)))})
     _ini_update(ini, "Analytics", {"PermissionAsked": "True", "Enabled": "False"})
     _ini_update(ini, "AutoUpdate", {"UpdateTrack": ""})
     # Commandes automatiques (Windows) : manette si branchée, sinon clavier + souris.
-    if paths.IS_WINDOWS and settings.get("dolphin_controls", "auto") == "auto":
+    if paths.IS_WINDOWS and settings.get("dolphin_controls", "auto") == "auto":  # sinon : réglages faits dans Dolphin
         pad = gamepad.connected()
         _ini_update(conf / "GCPadNew.ini", "GCPad1", GC_PAD if pad else GC_KB, replace_section=True)
         _ini_update(conf / "WiimoteNew.ini", "Wiimote1", WII_PAD if pad else WII_KB, replace_section=True)
@@ -250,9 +256,18 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
                                           int(disp.get("bezel_size", 82)), int(screen[0]), int(screen[1]))
         except Exception:
             bezel = None   # pas de contour plutôt qu'un jeu qui ne démarre pas
-    cfg = write_retroarch_cfg(disp, bezel)
+    cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True))
     args = ["-L", str(core), rom, "--appendconfig", str(cfg)]
     shader = find_shader(disp.get("effect", "none")) if use_shader else None
     if shader:
         args += ["--set-shader", str(shader)]
     return str(exe), args, str(exe.parent), bool(shader)
+
+
+def dolphin_setup_command():
+    """Ouvre Dolphin sans jeu, pour régler les manettes Wii / GameCube."""
+    exe = engines.dolphin_exe()
+    if not exe:
+        raise LaunchError("Dolphin (moteur GameCube / Wii) n'est pas encore installé.")
+    DOLPHIN_USER.mkdir(parents=True, exist_ok=True)
+    return str(exe), ["-u", str(DOLPHIN_USER)], str(exe.parent)

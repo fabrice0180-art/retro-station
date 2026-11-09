@@ -4,7 +4,7 @@
 Émulateur multi-consoles pour PC (Windows 10/11) et Mac :
 NES, Super Nintendo, Game Boy / Color / Advance, Nintendo 64, GameCube, Wii,
 Master System, Mega Drive, Game Gear, Mega-CD, 32X, Saturn, Dreamcast,
-Neo Geo, Neo Geo CD, Neo Geo Pocket / Color.
+Neo Geo, Neo Geo CD, Neo Geo Pocket / Color, PSP.
 
 
 1. INSTALLATION
@@ -71,10 +71,16 @@ Paramètres > « État des BIOS » montre ce qui manque.
 ------------
 Manette : reconnue automatiquement dans les jeux (PC et Mac).
 Souris : un clic lance un jeu ; dans les jeux Wii, elle sert de pointeur.
-Clavier dans les jeux : flèches, X = A, Z = B, S = X, A = Y, Q/W = L/R,
-  Entrée = Start, Maj droite = Select.
-  F1 = menu, F2 = sauvegarde rapide, F4 = chargement rapide.
-Quitter un jeu : Échap, ou Select + Start à la manette.
+Menu du jeu : F1 au clavier, ou Select + Start à la manette.
+Régler les commandes EN PLEIN JEU : menu > Commandes > Port 1, puis choisis
+  un bouton et appuie sur la touche voulue. C'est gardé automatiquement.
+  (Clic droit sur une console > « Régler les commandes » rappelle la marche à suivre.)
+Wii / GameCube : clic droit sur la console > « Régler les manettes » ouvre
+  les réglages de manettes de Dolphin.
+Clavier par défaut : flèches, X = A, Z = B, S = X, A = Y, Q/W = L/R,
+  Entrée = Start, Maj droite = Select. F2 = sauvegarde rapide, F4 = chargement rapide.
+Quitter un jeu : Échap, puis Échap une 2e fois pour confirmer
+  (confirmation désactivable dans les Paramètres).
 La partie reprend là où tu l'avais laissée.
 Sur PC, la manette (type Xbox) permet aussi de naviguer dans les menus :
   A = jouer, B = retour, LB/RB = changer de console, Y = favori.

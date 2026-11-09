@@ -80,8 +80,21 @@ def install_shaders(progress=None):
                 zf.extractall(SHADERS_DIR / pack)
 
 
+def ppsspp_assets_installed():
+    return (paths.BIOS / "PPSSPP").exists()
+
+
+def install_ppsspp_assets(progress=None):
+    """Fichiers dont l'émulateur PSP a besoin (polices, etc.), dans BIOS/PPSSPP."""
+    with tempfile.TemporaryDirectory() as td:
+        z = fetch_first([f"{BUILDBOT}/assets/system/PPSSPP.zip"], Path(td) / "p.zip", progress)
+        with zipfile.ZipFile(z) as zf:
+            zf.extractall(paths.BIOS)
+
+
 def status():
     return {
+        "ppsspp": ppsspp_assets_installed(),
         "shaders": shaders_installed(),
         "retroarch": retroarch_exe() is not None,
         "cores": {c: core_path(c).exists() for c in RETROARCH_CORES},
@@ -91,7 +104,7 @@ def status():
 
 def everything_installed():
     s = status()
-    return s["retroarch"] and s["dolphin"] and s["shaders"] and all(s["cores"].values())
+    return s["retroarch"] and s["dolphin"] and s["shaders"] and s["ppsspp"] and all(s["cores"].values())
 
 
 # ------------------------------------------------------------------ téléchargement
@@ -237,6 +250,8 @@ def install_all(report=None, force=False):
             steps.append((f"Cœur {core}", lambda p, c=core: install_core(c, p)))
     if force or not s["dolphin"]:
         steps.append(("Dolphin (GameCube / Wii)", install_dolphin))
+    if force or not s["ppsspp"]:
+        steps.append(("Fichiers PSP", install_ppsspp_assets))
     if force or not s["shaders"]:
         steps.append(("Effets d'écran", install_shaders))
     errors = []

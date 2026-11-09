@@ -103,6 +103,8 @@ def sniff_disc(path: Path):
         return "saturn"
     if data.startswith(b"SEGA SEGAKATANA"):
         return "dreamcast"
+    if _read(path, 0x8008, 8) == b"PSP GAME":
+        return "psp"
     if len(head) >= 0x20:
         if head[0x18:0x1C] == b"\x5D\x1C\x9E\xA3":
             return "wii"

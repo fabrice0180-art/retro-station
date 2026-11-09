@@ -66,7 +66,8 @@ QToolTip {{ background: #232636; color: #e8eaf2; border: 1px solid #30354b; padd
 
 
 # ------------------------------------------------------------------ réglages
-DEFAULTS = {"fullscreen": True, "move_files": False, "dolphin_controls": "auto", "asked_engines": False}
+DEFAULTS = {"fullscreen": True, "move_files": False, "dolphin_controls": "auto", "asked_engines": False,
+            "confirm_quit": True}
 
 
 def load_settings():
@@ -288,7 +289,9 @@ class SettingsDialog(QDialog):
         self.dc = QCheckBox("Régler tout seul les commandes Wii / GameCube (manette si branchée, sinon clavier + souris)")
         self.dc.setChecked(s["dolphin_controls"] == "auto")
         self.dc.setVisible(paths.IS_WINDOWS)
-        for w in (self.fs, self.mv, self.dc):
+        self.cq = QCheckBox("Demander confirmation pour quitter un jeu (Échap deux fois)")
+        self.cq.setChecked(s.get("confirm_quit", True))
+        for w in (self.fs, self.mv, self.dc, self.cq):
             lay.addWidget(w)
 
         grid = QGridLayout()
@@ -347,28 +350,43 @@ class SettingsDialog(QDialog):
         s["fullscreen"] = self.fs.isChecked()
         s["move_files"] = self.mv.isChecked()
         s["dolphin_controls"] = "auto" if self.dc.isChecked() else "manuel"
+        s["confirm_quit"] = self.cq.isChecked()
         save_settings(s)
         self.accept()
 
 
 def show_controls(parent):
-    quit_hint = ("Maintenir Select + Start (manette)" if paths.IS_WINDOWS else "Select + Start (manette)")
-    QMessageBox.information(parent, "Commandes", f"""DANS LES MENUS
+    QMessageBox.information(parent, "Commandes", """DANS LES MENUS DE RÉTRO STATION
 • Souris : un clic sur un jeu le lance (clic droit = options)
 • Clavier : flèches + Entrée, Échap pour revenir à la liste des consoles
 • Manette (Windows) : croix / stick, A = jouer, B = retour, LB / RB = console précédente / suivante, Y = favori
 
 DANS LES JEUX (NES, Super Nintendo, Game Boy, N64, Sega, Neo Geo)
-• Manette : reconnue automatiquement
-• Clavier : flèches, X = A, Z = B, S = X, A = Y, Q / W = L / R, Entrée = Start, Maj droite = Select
-• F1 = menu, F2 = sauvegarde rapide, F4 = chargement rapide, Espace = accéléré
-• Quitter : Échap, ou {quit_hint}. Menu à la manette : L3 + R3
+• Menu du jeu : F1, ou Select + Start à la manette
+• Régler les commandes en plein jeu : menu > Commandes > Port 1 > choisis un bouton et appuie sur la touche voulue.
+  Tes réglages sont gardés automatiquement pour cette console.
+• Clavier par défaut : flèches, X = A, Z = B, S = X, A = Y, Q / W = L / R, Entrée = Start, Maj droite = Select
+• F2 = sauvegarde rapide, F4 = chargement rapide, Espace = accéléré
+• Quitter : Échap deux fois (ou menu > Quitter)
 • La partie reprend automatiquement là où tu l'avais laissée
 
 WII / GAMECUBE
 • Souris = pointeur de la Wiimote, clic gauche = A, clic droit = B
 • Manette : stick droit = pointeur, gâchette droite = B, Start = +, Select = −
-• Quitter : Échap""")
+• Régler les manettes : clic droit sur Wii ou GameCube > « Régler les manettes »
+• Quitter : Échap (confirmation demandée)""")
+
+
+def show_remap_help(parent, cname):
+    QMessageBox.information(parent, f"Commandes — {cname}", f"""Les commandes se règlent directement pendant le jeu :
+
+1. Lance un jeu {cname}.
+2. Ouvre le menu : F1 au clavier, ou Select + Start à la manette.
+3. Va dans « Commandes », puis « Port 1 » (joueur 1).
+4. Choisis un bouton et appuie sur la touche ou le bouton voulu.
+5. Reviens au jeu : tes réglages sont enregistrés automatiquement pour la console.
+
+Astuce : « Enregistrer le remappage du jeu » garde des commandes spéciales pour un seul jeu.""")
 
 
 # ------------------------------------------------------------------ affichage par console
@@ -850,10 +868,32 @@ class MainWindow(QMainWindow):
             return
         m = QMenu(self)
         m.addAction("🖥  Affichage et contour d'écran…", lambda: DisplayDialog(self, cid).exec())
+        m.addAction("🎮  Régler les manettes…" if BY_ID[cid].engine == "dolphin" else "🎮  Régler les commandes…",
+                    lambda: self._controls_for(cid))
         m.addAction("📷  Mettre ma propre photo de la console…", lambda: self._set_console_photo(cid))
         if photos.custom(cid).exists():
             m.addAction("↺  Remettre la photo d'origine", lambda: self._reset_console_photo(cid))
         m.exec(self.sidebar.viewport().mapToGlobal(pos))
+
+    def _controls_for(self, cid):
+        c = BY_ID[cid]
+        if c.engine != "dolphin":
+            show_remap_help(self, c.name)
+            return
+        try:
+            exe, args, cwd = launch.dolphin_setup_command()
+        except launch.LaunchError as e:
+            QMessageBox.warning(self, "Manettes", str(e))
+            return
+        r = QMessageBox.question(self, "Manettes Wii / GameCube",
+                                 "Dolphin va s'ouvrir. Clique sur l'icône « Manettes » (ou menu Options > "
+                                 "Configuration des manettes), règle tes boutons, puis ferme Dolphin.\n\n"
+                                 "Rétro Station gardera ensuite tes réglages au lieu des siens. Continuer ?")
+        if r != QMessageBox.StandardButton.Yes:
+            return
+        self.settings["dolphin_controls"] = "manuel"
+        save_settings(self.settings)
+        QProcess.startDetached(exe, args, cwd)
 
     def _set_console_photo(self, cid):
         f, _ = QFileDialog.getOpenFileName(self, f"Photo pour {BY_ID[cid].name}", str(Path.home()),
@@ -1023,10 +1063,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(700, lambda: self.proc is not None and self.showMinimized())
 
     def stop_game(self):
+        # demande polie de fermeture : le moteur affiche sa confirmation et sauvegarde
         if self.proc is not None and self.proc.state() != QProcess.ProcessState.NotRunning:
             self.proc.terminate()
-            p = self.proc
-            QTimer.singleShot(4000, lambda: p.state() != QProcess.ProcessState.NotRunning and p.kill())
 
     def _game_error(self, err):
         if err == QProcess.ProcessError.FailedToStart:
@@ -1069,6 +1108,7 @@ class MainWindow(QMainWindow):
         m.addAction("🖼  Choisir une jaquette…", lambda: self._pick_cover(g))
         m.addAction(f"🖥  Affichage {BY_ID[g.console].name} (taille, contour…)",
                     lambda: DisplayDialog(self, g.console).exec())
+        m.addAction("🎮  Régler les commandes…", lambda: self._controls_for(g.console))
         m.addAction("📂  Afficher le fichier", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(g.path.parent))))
         m.addSeparator()
         m.addAction("🗑  Supprimer de la bibliothèque", lambda: self._delete(g))
@@ -1122,18 +1162,22 @@ class MainWindow(QMainWindow):
         b = gamepad.read() or 0
         now = time.time()
         if self.proc is not None:
-            # pendant le jeu : maintenir Select + Start 1,5 s (ou Échap sous Dolphin) = quitter
-            combo = (b & gamepad.BACK) and (b & gamepad.START)
-            if combo:
-                self.hold_since = self.hold_since or now
-                if now - self.hold_since > 1.5:
+            # Wii / GameCube : maintenir Select + Start 1,5 s, ou Échap = quitter (Dolphin demande confirmation).
+            # Les autres consoles gèrent elles-mêmes Échap et Select + Start (menu).
+            dolphin = self.running_game and BY_ID[self.running_game.console].engine == "dolphin"
+            if dolphin:
+                if (b & gamepad.BACK) and (b & gamepad.START):
+                    self.hold_since = self.hold_since or now
+                    if now - self.hold_since > 1.5:
+                        self.hold_since = now + 3   # pas de répétition immédiate
+                        self.stop_game()
+                else:
                     self.hold_since = None
+                esc = gamepad.escape_pressed()
+                if esc and not getattr(self, "esc_prev", False) and now > getattr(self, "esc_next", 0):
+                    self.esc_next = now + 2
                     self.stop_game()
-            else:
-                self.hold_since = None
-            if (self.running_game and BY_ID[self.running_game.console].engine == "dolphin"
-                    and gamepad.escape_pressed()):
-                self.stop_game()
+                self.esc_prev = esc
             self.pad_prev = b
             return
         if not QApplication.activeWindow():

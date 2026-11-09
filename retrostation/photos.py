@@ -42,6 +42,7 @@ PHOTOS = {
     "ngp": (["Neo-Geo-Pocket-Anthracite-Left.jpg", "Neo-Geo-Pocket-Anthracite.jpg"], "Neo Geo Pocket Evan-Amos"),
     "ngpc": (["Neo-Geo-Pocket-Color-Blue-Left.jpg", "Neo-Geo-Pocket-Color-Blue.jpg"],
              "Neo Geo Pocket Color Evan-Amos"),
+    "psp": (["Psp-1000.jpg", "PSP-1000.jpg", "Sony-PSP-1000-Body.png"], "PlayStation Portable PSP-1000 Evan-Amos"),
 }
 
 IMG_MAGIC = (b"\x89PNG", b"\xff\xd8\xff")
