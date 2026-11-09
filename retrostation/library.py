@@ -44,21 +44,42 @@ class Library:
         tmp.replace(paths.LIBRARY_FILE)
 
     def scan(self):
+        """Liste les jeux, console par console (parcours rapide du disque)."""
+        import os
         games = []
         for c in CONSOLES:
             d = console_dir(c.id)
-            files = [p for p in d.rglob("*") if p.is_file() and p.suffix.lower() in c.shown_exts]
-            hidden = set()
-            for p in files:
-                if p.suffix.lower() == ".m3u":
-                    hidden.update(x.resolve() for x in m3u_files(p))
-            for p in files:
-                if p.resolve() in hidden or p.name.lower() == "neogeo.zip":
+            if not d.exists():
+                continue
+            exts = c.shown_exts
+            files = []                       # (chemin relatif posix, chemin complet)
+            stack = [(str(d), "")]
+            while stack:
+                folder, rel = stack.pop()
+                try:
+                    with os.scandir(folder) as it:
+                        for e in it:
+                            if e.name.startswith("."):
+                                continue
+                            if e.is_dir(follow_symlinks=False):
+                                stack.append((e.path, rel + e.name + "/"))
+                            elif os.path.splitext(e.name)[1].lower() in exts:
+                                files.append((rel + e.name, e.path))
+                except OSError:
                     continue
-                key = f"{c.id}/{p.relative_to(d).as_posix()}"
-                m = self.meta.get(key, {})
-                games.append(Game(c.id, p, m.get("title") or clean_title(p.stem),
-                                  region_of(p.stem), key))
+            hidden = set()
+            for relp, full in files:
+                if relp.lower().endswith(".m3u"):
+                    hidden.update(os.path.normcase(str(x)) for x in m3u_files(Path(full)))
+            for relp, full in files:
+                name = relp.rsplit("/", 1)[-1]
+                if name.lower() == "neogeo.zip" or (hidden and os.path.normcase(full) in hidden):
+                    continue
+                key = f"{c.id}/{relp}"
+                m = self.meta.get(key)
+                stem = os.path.splitext(name)[0]
+                games.append(Game(c.id, Path(full), (m or {}).get("title") or clean_title(stem),
+                                  region_of(stem), key))
         games.sort(key=lambda g: g.title.lower())
         self.games = games
         return games

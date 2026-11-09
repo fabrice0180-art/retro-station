@@ -298,6 +298,8 @@ class TileDelegate(QStyledItemDelegate):
         self.win = win
         self.font = QFont()
         self.font.setPixelSize(13)
+        self.fm = QFontMetrics(self.font)
+        self.elided = {}
 
     def sizeHint(self, option, index):
         return QSize(TW + 26, TH + 52)
@@ -329,8 +331,10 @@ class TileDelegate(QStyledItemDelegate):
             p.drawRoundedRect(QRectF(x - 1, y - 1, TW + 2, TH + 2), 15, 15)
         p.setFont(self.font)
         p.setPen(QColor("white" if selected else "#cfd3e3"))
-        fm = QFontMetrics(self.font)
-        text = fm.elidedText(g.title, Qt.TextElideMode.ElideRight, (r.width() - 14) * 2 - 20)
+        text = self.elided.get(g.title)
+        if text is None:
+            text = self.elided[g.title] = self.fm.elidedText(g.title, Qt.TextElideMode.ElideRight,
+                                                             (r.width() - 14) * 2 - 20)
         p.drawText(QRectF(r.x() + 7, y + TH + 5, r.width() - 14, 38),
                    int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop) | int(Qt.TextFlag.TextWordWrap), text)
         p.restore()
