@@ -83,6 +83,7 @@ def main():
     ui.SettingsDialog(w).close()
     w._pad_poll()
     w._cycle_console(1)
+    w._select_filter("all")
     g = w.current_game()
     assert g is not None
     w._cover_ready(g.key)
