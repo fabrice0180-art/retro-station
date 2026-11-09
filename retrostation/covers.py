@@ -40,8 +40,7 @@ def _candidates(game):
     first = re.match(r"^(.*?\([^)]*\))", stem)
     if first:
         names.append(first.group(1))
-    names += [f"{title} (Europe)", f"{title} (France)", f"{title} (USA)", f"{title} (World)",
-              f"{title} (Japan)", f"{title} (USA, Europe)"]
+    names += [f"{title} (Europe)", f"{title} (USA)", f"{title} (World)"]
     return list(dict.fromkeys(_safe(n) for n in names))
 
 
@@ -57,8 +56,8 @@ def download_cover(game) -> Path | None:
     if not system:
         return None
     dest.parent.mkdir(parents=True, exist_ok=True)
-    for name in _candidates(game):
-        for host in HOSTS:
+    for n, name in enumerate(_candidates(game)):
+        for host in (HOSTS if n == 0 else HOSTS[:1]):   # site de secours seulement pour le nom exact
             url = host.format(sys=urllib.parse.quote(system),
                               repo=urllib.parse.quote(system.replace(" ", "_")),
                               name=urllib.parse.quote(name))
