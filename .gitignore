@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+build/
+dist/
+dmg/
+installers/
+.ruff_cache/
+*.spec

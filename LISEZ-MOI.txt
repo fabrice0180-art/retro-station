@@ -1,0 +1,92 @@
+﻿RÉTRO STATION 1.0 — par Fabrice M.
+=====================================
+
+Émulateur multi-consoles pour PC (Windows 10/11) et Mac :
+NES, Super Nintendo, Game Boy / Color / Advance, Nintendo 64, GameCube, Wii,
+Master System, Mega Drive, Game Gear, Mega-CD, 32X, Saturn, Dreamcast,
+Neo Geo, Neo Geo CD, Neo Geo Pocket / Color.
+
+
+1. INSTALLATION
+---------------
+PC (Windows 10/11) : lance « RetroStation-Setup-…-Windows.exe ».
+     Si Windows affiche « Windows a protégé votre ordinateur » :
+     « Informations complémentaires » puis « Exécuter quand même ».
+     Un raccourci « Rétro Station » est créé sur le bureau.
+
+Mac : ouvre le DMG qui correspond à ton Mac
+     (Menu Pomme > À propos de ce Mac : « Puce Apple M… » = AppleSilicon,
+     « Processeur Intel » = Intel), puis glisse « Rétro Station » dans Applications.
+     Au premier lancement, si le Mac refuse d'ouvrir l'appli :
+     Réglages Système > Confidentialité et sécurité > « Ouvrir quand même ».
+
+Au premier lancement, Rétro Station propose de télécharger ses moteurs
+d'émulation (RetroArch, ses cœurs et Dolphin, environ 300 Mo, une seule fois).
+Une connexion internet est nécessaire.
+
+
+2. AJOUTER DES JEUX
+-------------------
+Bouton « + Importer des jeux » :
+  - « Choisir des fichiers » : sélectionne tout d'un coup (Ctrl+A sur PC, Cmd+A sur Mac)
+  - « Choisir un dossier entier » : tout le dossier et ses sous-dossiers
+  - ou glisse tes fichiers directement sur la fenêtre.
+Chaque jeu est reconnu et rangé tout seul dans sa console, et sa jaquette est
+téléchargée automatiquement (si le fichier porte le nom officiel du jeu,
+ex. « Super Mario World (Europe).sfc »). Si un fichier est ambigu
+(certains .iso, .chd, .bin…), l'appli te demande une seule fois à quelle
+console il appartient.
+
+Un clic sur un jeu le lance. Clic droit : favori, jaquette perso, supprimer.
+Chaque console est illustrée par une mini-photo, téléchargée au premier lancement.
+Clic droit sur une console (à gauche) pour mettre ta propre photo.
+
+
+3. BIOS
+-------
+Certaines consoles ont besoin du BIOS de ta propre console :
+  - Neo Geo        : neogeo.zip (indispensable)
+  - Mega-CD        : bios_CD_E.bin / bios_CD_U.bin / bios_CD_J.bin
+  - Saturn         : mpr-17933.bin ou sega_101.bin
+  - Neo Geo CD     : neocd_f.rom (ou neocd_z.rom…) + 000-lo.lo
+  - Dreamcast      : dc_boot.bin + dc_flash.bin (recommandés)
+Importe-les comme des jeux : ils sont rangés tout seuls au bon endroit.
+Paramètres > « État des BIOS » montre ce qui manque.
+
+
+4. COMMANDES
+------------
+Manette : reconnue automatiquement dans les jeux (PC et Mac).
+Souris : un clic lance un jeu ; dans les jeux Wii, elle sert de pointeur.
+Clavier dans les jeux : flèches, X = A, Z = B, S = X, A = Y, Q/W = L/R,
+  Entrée = Start, Maj droite = Select.
+  F1 = menu, F2 = sauvegarde rapide, F4 = chargement rapide.
+Quitter un jeu : Échap, ou Select + Start à la manette.
+La partie reprend là où tu l'avais laissée.
+Sur PC, la manette (type Xbox) permet aussi de naviguer dans les menus :
+  A = jouer, B = retour, LB/RB = changer de console, Y = favori.
+
+
+5. OÙ SONT MES FICHIERS ?
+-------------------------
+Dossier « RetroStation » dans ton dossier personnel
+(C:\Users\<toi>\RetroStation sur PC, ~/RetroStation sur Mac) :
+  Jeux/         tes jeux, un dossier par console
+  BIOS/         les BIOS
+  Sauvegardes/  parties, sauvegardes rapides, Wii/GameCube
+  Jaquettes/    les images des jeux
+  Moteurs/      RetroArch, cœurs, Dolphin
+Il est volontairement en dehors de Documents pour ne pas remplir OneDrive / iCloud.
+
+
+6. À SAVOIR
+-----------
+L'émulateur est légal ; les jeux que tu importes doivent provenir de tes
+propres cartouches / disques. Rétro Station ne télécharge aucun jeu.
+Moteurs utilisés (logiciels libres) : RetroArch (Mesen, Snes9x, Gambatte,
+mGBA, Mupen64Plus-Next, Genesis Plus GX, PicoDrive, Beetle Saturn, Flycast,
+FinalBurn Neo, NeoCD, Beetle NeoPop) et Dolphin.
+Jaquettes : projet libre libretro-thumbnails.
+Photos des consoles : Evan-Amos et contributeurs de Wikimedia Commons
+(domaine public / CC BY-SA), téléchargées depuis commons.wikimedia.org.
+Icône de l'appli et icônes de secours : créations originales.

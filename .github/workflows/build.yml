@@ -1,0 +1,83 @@
+name: Fabriquer les installateurs
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  RS_VERSION: "1.0.0"
+
+jobs:
+  windows:
+    name: Windows (setup.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dépendances
+        run: pip install -r requirements.txt pyinstaller
+      - name: Application autonome
+        run: pyinstaller --noconfirm --windowed --name RetroStation --icon assets/icon.ico --add-data "assets;assets" RetroStation.pyw
+      - name: Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Installateur
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe", "$env:ProgramFiles\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          & $iscc.FullName packaging\windows\RetroStation.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: installers/*.exe
+
+  mac:
+    name: Mac ${{ matrix.label }} (DMG)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            label: AppleSilicon
+          - runner: macos-15-intel
+            label: Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dépendances
+        run: pip install -r requirements.txt pyinstaller
+      - name: Application + DMG
+        run: bash packaging/mac/build_dmg.sh ${{ matrix.label }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.label }}
+          path: installers/*.dmg
+
+  release:
+    name: Publication
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}-{1}', env.RS_VERSION, github.run_number) }}
+          name: Rétro Station ${{ env.RS_VERSION }} (fabrication ${{ github.run_number }})
+          body: |
+            Rétro Station — par Fabrice M.
+
+            • Windows : RetroStation-Setup-…-Windows.exe
+            • Mac puce M (M1, M2, M3, M4…) : RetroStation-…-Mac-AppleSilicon.dmg
+            • Mac Intel : RetroStation-…-Mac-Intel.dmg
+          files: out/*
