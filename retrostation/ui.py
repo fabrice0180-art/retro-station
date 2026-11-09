@@ -18,11 +18,11 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QListWidget, 
                                QPushButton, QLineEdit, QStackedWidget, QFileDialog, QMessageBox,
                                QInputDialog, QProgressDialog, QDialog, QProgressBar, QCheckBox,
                                QMenu, QAbstractButton, QGridLayout, QComboBox, QFormLayout, QSlider,
-                               QStyledItemDelegate, QStyle)
+                               QStyledItemDelegate, QStyle, QTreeWidget, QTreeWidgetItem)
 
 from . import paths, engines, covers, launch, gamepad, photos
 from .consoles import CONSOLES, BY_ID, FAMILIES
-from .library import Library, plan_import, execute_import, console_dir
+from .library import Library, plan_import, execute_import, console_dir, analyze, preferred_only
 
 TW, TH = 168, 232          # taille d'une jaquette dans la grille
 ACCENT = "#ff7a45"
@@ -69,7 +69,7 @@ QToolTip {{ background: #232636; color: #e8eaf2; border: 1px solid #30354b; padd
 
 # ------------------------------------------------------------------ réglages
 DEFAULTS = {"fullscreen": True, "move_files": False, "dolphin_controls": "auto", "asked_engines": False,
-            "confirm_quit": True}
+            "confirm_quit": True, "hide_variants": False}
 
 
 def load_settings():
@@ -526,6 +526,123 @@ def show_remap_help(parent, cname):
 Astuce : « Enregistrer le remappage du jeu » garde des commandes spéciales pour un seul jeu.""")
 
 
+# ------------------------------------------------------------------ ménage de la bibliothèque
+class CleanupDialog(QDialog):
+    KIND = {"identique": "Copies identiques", "versions": "Plusieurs versions du même jeu",
+            "douteuse": "ROMs douteuses"}
+
+    def __init__(self, win):
+        super().__init__(win)
+        self.win = win
+        self.setWindowTitle("Ménage : doublons et ROMs douteuses")
+        self.resize(900, 640)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 18)
+        lay.addWidget(QLabel("Ménage de la bibliothèque", objectName="title"))
+        self.info = QLabel("Analyse en cours…", objectName="subtitle")
+        self.info.setWordWrap(True)
+        lay.addWidget(self.info)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Jeu / fichier", "Console", "Pourquoi"])
+        self.tree.setColumnWidth(0, 470)
+        self.tree.setColumnWidth(1, 150)
+        self.tree.setStyleSheet("QTreeWidget { background:#191b25; border:none; border-radius:10px; }"
+                                "QHeaderView::section { background:#232636; border:none; padding:6px; }")
+        lay.addWidget(self.tree, 1)
+        row = QHBoxLayout()
+        self.count = QLabel("", objectName="subtitle")
+        row.addWidget(self.count, 1)
+        close = QPushButton("Fermer")
+        close.clicked.connect(lambda: self.reject())
+        self.go = QPushButton("Mettre à la corbeille les fichiers cochés", objectName="primary")
+        self.go.setEnabled(False)
+        self.go.clicked.connect(lambda: self._trash())
+        row.addWidget(close)
+        row.addWidget(self.go)
+        lay.addLayout(row)
+        self.tree.itemChanged.connect(lambda *_: self._update_count())
+        self.task = Task(lambda sig: analyze(list(win.lib.games), lambda f: sig.progress.emit("", f)))
+        self.task.signals.progress.connect(lambda _t, f: self.info.setText(f"Analyse en cours… {int(f * 100)} %"))
+        self.task.signals.done.connect(self._show)
+        QThreadPool.globalInstance().start(self.task)
+
+    def _show(self, groups):
+        if isinstance(groups, Exception):
+            self.info.setText(f"Erreur pendant l'analyse : {groups}")
+            return
+        if not groups:
+            self.info.setText("✅ Aucun doublon ni ROM douteuse : ta bibliothèque est propre.")
+            return
+        self.info.setText("Coche ce que tu veux retirer (les propositions sont déjà cochées). "
+                          "Les fichiers vont dans la corbeille de ton ordinateur : tu peux les récupérer.")
+        self.tree.blockSignals(True)
+        for kind in ("identique", "versions", "douteuse"):
+            sub = [g for g in groups if g["kind"] == kind]
+            if not sub:
+                continue
+            top = QTreeWidgetItem([f"{self.KIND[kind]} ({len(sub) if kind != 'douteuse' else len(sub[0]['items'])})"])
+            f = top.font(0)
+            f.setBold(True)
+            top.setFont(0, f)
+            self.tree.addTopLevelItem(top)
+            for grp in sub:
+                parent = top
+                if kind != "douteuse":
+                    parent = QTreeWidgetItem([grp["title"], BY_ID[grp["console"]].name, ""])
+                    top.addChild(parent)
+                for game, why, remove in grp["items"]:
+                    it = QTreeWidgetItem([game.path.name, BY_ID[game.console].name, why])
+                    it.setData(0, Qt.ItemDataRole.UserRole, game)
+                    it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    it.setCheckState(0, Qt.CheckState.Checked if remove else Qt.CheckState.Unchecked)
+                    parent.addChild(it)
+                parent.setExpanded(True)
+            top.setExpanded(True)
+        self.tree.blockSignals(False)
+        self._update_count()
+
+    def _checked(self):
+        out = []
+
+        def walk(item):
+            for i in range(item.childCount()):
+                c = item.child(i)
+                g = c.data(0, Qt.ItemDataRole.UserRole)
+                if g is not None and c.checkState(0) == Qt.CheckState.Checked:
+                    out.append(g)
+                walk(c)
+        walk(self.tree.invisibleRootItem())
+        uniq = {g.key: g for g in out}
+        return list(uniq.values())
+
+    def _update_count(self):
+        n = len(self._checked())
+        self.count.setText(f"{n} fichier(s) coché(s)")
+        self.go.setEnabled(n > 0)
+
+    def _trash(self):
+        games = self._checked()
+        r = QMessageBox.question(self, "Ménage", f"Mettre {len(games)} jeu(x) à la corbeille ?\n"
+                                 "(Tu pourras les récupérer depuis la corbeille.)")
+        if r != QMessageBox.StandardButton.Yes:
+            return
+        from PySide6.QtCore import QFile
+        from .detect import companions
+        failed = 0
+        for g in games:
+            for f in [g.path] + companions(g.path):
+                if f.exists() and not QFile.moveToTrash(str(f)):
+                    failed += 1
+            self.win.lib.meta.pop(g.key, None)
+        self.win.lib.save()
+        self.win.refresh()
+        msg = f"{len(games)} jeu(x) mis à la corbeille."
+        if failed:
+            msg += f"\n{failed} fichier(s) n'ont pas pu être déplacés."
+        QMessageBox.information(self, "Ménage", msg)
+        self.accept()
+
+
 # ------------------------------------------------------------------ affichage par console
 class DisplayDialog(QDialog):
     """Taille de l'écran, netteté, effets et contour, console par console."""
@@ -839,7 +956,15 @@ class MainWindow(QMainWindow):
         imp_dir = QPushButton("📁  Un dossier entier")
         imp_dir.clicked.connect(lambda: self.import_folder())
         top.addWidget(imp_dir)
+        clean = QPushButton("🧹  Ménage")
+        clean.setToolTip("Trouver les doublons et les ROMs abîmées")
+        clean.clicked.connect(lambda: CleanupDialog(self).exec())
+        top.addWidget(clean)
         mv.addLayout(top)
+        self.hide_var = QCheckBox("Une seule version de chaque jeu (masquer les doublons de régions)")
+        self.hide_var.setChecked(self.settings.get("hide_variants", False))
+        self.hide_var.toggled.connect(self._toggle_variants)
+        mv.addWidget(self.hide_var)
 
         self.stack = QStackedWidget()
         self.grid = QListView(objectName="grid")
@@ -946,8 +1071,15 @@ class MainWindow(QMainWindow):
             self.filter = cur.data(Qt.ItemDataRole.UserRole)
             self.populate()
 
+    def _toggle_variants(self, on):
+        self.settings["hide_variants"] = bool(on)
+        save_settings(self.settings)
+        self.populate()
+
     def visible_games(self):
         gs = self.lib.games
+        if self.settings.get("hide_variants"):
+            gs = preferred_only(gs)
         if self.filter == "fav":
             gs = [g for g in gs if self.lib.meta.get(g.key, {}).get("fav")]
         elif self.filter == "recent":

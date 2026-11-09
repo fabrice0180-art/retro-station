@@ -211,3 +211,147 @@ def execute_import(plan: ImportPlan, move=False, progress=None):
     if progress:
         progress(len(jobs), len(jobs), "")
     return added, errors
+
+
+# ------------------------------------------------------------------ ménage : doublons et ROMs douteuses
+import re as _re
+import zlib as _zlib
+from functools import lru_cache as _lru
+
+REGION_RANK = {"france": 0, "europe": 1, "world": 2, "monde": 2, "usa": 3, "japan": 4}
+BAD_TAGS = [
+    (r"\[b\d*\]", "copie abîmée [b]"),
+    (r"\[o\d*\]", "copie trop grande [o]"),
+    (r"\[h[^\]]*\]", "jeu modifié (hack)"),
+    (r"\[t\d*\]", "version avec triche [t]"),
+    (r"\[p\d*\]", "version pirate [p]"),
+    (r"\(beta[^)]*\)", "version bêta"),
+    (r"\(proto[^)]*\)", "prototype"),
+    (r"\(demo[^)]*\)|\(sample\)", "démo"),
+    (r"\(hack\)|\(pirate\)", "jeu modifié"),
+]
+
+
+@_lru(maxsize=None)
+def _norm_title(stem):
+    t = clean_title(stem).lower()
+    t = _re.sub(r"^the\s+|,\s*the$", "", t)
+    disc = _re.search(r"\((?:dis[ck]|cd)\s*(\d+)", stem.lower())   # disques 1, 2… = jeux distincts
+    return _re.sub(r"[^a-z0-9]+", "", t) + (f"#d{disc.group(1)}" if disc else "")
+
+
+def _preference(game):
+    return _pref_stem(game.path.stem)
+
+
+@_lru(maxsize=None)
+def _pref_stem(stem):
+    """Plus petit = meilleure version à garder."""
+    low = stem.lower()
+    bad = any(_re.search(p, low) for p, _ in BAD_TAGS)
+    region = min((REGION_RANK[w] for w in _re.findall(r"[a-z]+", " ".join(_re.findall(r"\(([^)]*)\)", low)))
+                  if w in REGION_RANK), default=5)
+    rev = _re.search(r"\(rev\s*([0-9a-z]+)\)|\(v\s*([0-9.]+)\)", low)
+    rev_val = -(int(_re.sub(r"\D", "", (rev.group(1) or rev.group(2) or "0")) or 0)) if rev else 0
+    return (bad, region, rev_val, len(low))
+
+
+def _crc(path, limit=None):
+    c = 0
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(1 << 20)
+            if not b:
+                break
+            c = _zlib.crc32(b, c)
+    return c
+
+
+def bad_reason(game):
+    low = game.path.stem.lower()
+    for pat, why in BAD_TAGS:
+        if _re.search(pat, low):
+            return why
+    try:
+        size = game.path.stat().st_size
+    except OSError:
+        return "fichier introuvable"
+    if size < 1024:
+        return "fichier vide ou presque"
+    if game.path.suffix.lower() == ".zip":
+        import zipfile
+        try:
+            with zipfile.ZipFile(game.path) as z:
+                if z.testzip() is not None:
+                    return "archive .zip abîmée"
+        except Exception:
+            return "archive .zip illisible"
+    return ""
+
+
+def analyze(games, progress=None):
+    """Repère les copies identiques, les versions multiples d'un même jeu et les ROMs douteuses.
+    Renvoie une liste de groupes : {"kind", "title", "console", "items": [(jeu, raison, à_retirer)]}."""
+    groups = []
+    flagged = set()
+    by_console = {}
+    for g in games:
+        by_console.setdefault(g.console, []).append(g)
+    done, total = 0, max(len(games), 1)
+    for cid, gs in by_console.items():
+        # 1) copies identiques (même taille, puis même empreinte)
+        by_size = {}
+        for g in gs:
+            try:
+                by_size.setdefault(g.path.stat().st_size, []).append(g)
+            except OSError:
+                pass
+        for same in by_size.values():
+            if len(same) < 2:
+                continue
+            by_crc = {}
+            for g in same:
+                try:
+                    by_crc.setdefault(_crc(g.path), []).append(g)
+                except OSError:
+                    pass
+            for dup in by_crc.values():
+                if len(dup) > 1:
+                    dup.sort(key=_preference)
+                    items = [(dup[0], "à garder", False)] + [(g, "copie identique", True) for g in dup[1:]]
+                    groups.append({"kind": "identique", "title": dup[0].title, "console": cid, "items": items})
+                    flagged.update(g.key for g in dup[1:])
+        # 2) plusieurs versions du même jeu (régions, révisions…)
+        by_title = {}
+        for g in gs:
+            if g.key not in flagged:
+                by_title.setdefault(_norm_title(g.path.stem), []).append(g)
+        for vers in by_title.values():
+            if len(vers) > 1:
+                vers.sort(key=_preference)
+                items = [(vers[0], "version conseillée", False)]
+                items += [(g, "autre version" + (f" ({g.region})" if g.region else ""), True) for g in vers[1:]]
+                groups.append({"kind": "versions", "title": vers[0].title, "console": cid, "items": items})
+        done += len(gs)
+        if progress:
+            progress(done / total)
+    # 3) ROMs douteuses
+    bad_items = []
+    for g in games:
+        why = bad_reason(g)
+        if why:
+            bad_items.append((g, why, True))
+    if bad_items:
+        groups.append({"kind": "douteuse", "title": "ROMs douteuses", "console": "", "items": bad_items})
+    return groups
+
+
+def preferred_only(games):
+    """Une seule version par jeu (la meilleure), pour un affichage sans doublons."""
+    best = {}
+    for g in games:
+        k = (g.console, _norm_title(g.path.stem))
+        if k not in best or _preference(g) < _preference(best[k]):
+            best[k] = g
+    keep = set(id(g) for g in best.values())
+    return [g for g in games if id(g) in keep]

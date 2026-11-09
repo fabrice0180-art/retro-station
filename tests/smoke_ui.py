@@ -81,6 +81,18 @@ def main():
     dd._changed()
     dd.close()
     ui.SettingsDialog(w).close()
+    t = time.perf_counter()
+    cd = ui.CleanupDialog(w)
+    while cd.tree.topLevelItemCount() == 0 and time.perf_counter() - t < 30:
+        pump(0.1)
+    assert cd.tree.topLevelItemCount() > 0, cd.info.text()
+    notice(f"Analyse des doublons ({n_nes + n_gb} jeux) : {time.perf_counter() - t:.2f} s, "
+           f"{len(cd._checked())} fichiers proposés")
+    cd.close()
+    w.hide_var.setChecked(True)
+    assert w.model.rowCount() >= 1
+    w.hide_var.setChecked(False)
+    w._select_filter("all")
     w._pad_poll()
     w._cycle_console(1)
     w._select_filter("all")

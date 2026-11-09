@@ -55,6 +55,16 @@ Contour « Mon image de contour » : choisis un PNG (idéalement 1920 x 1080) do
 zone de l'écran est transparente ; le jeu se cale tout seul dedans.
 Clique sur « NINTENDO », « SEGA » ou « SNK » à gauche pour voir toute une famille.
 
+2 ter. MÉNAGE : DOUBLONS ET ROMS DOUTEUSES
+---------------------------------------
+Bouton « Ménage » : Rétro Station repère les copies identiques, les différentes
+versions d'un même jeu (France, Europe, USA, Japon, révisions) et les ROMs
+douteuses (copies abîmées [b], prototypes, démos, fichiers vides, .zip cassés).
+Les propositions sont cochées : tu choisis, puis « Mettre à la corbeille ».
+Rien n'est effacé définitivement : tout passe par la corbeille de l'ordinateur.
+Case « Une seule version de chaque jeu » : masque les doublons de régions sans
+rien supprimer (la version française ou européenne est montrée en priorité).
+
 3. BIOS
 -------
 Certaines consoles ont besoin du BIOS de ta propre console :
