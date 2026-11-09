@@ -49,7 +49,14 @@ jobs:
           sudo installer -pkg py.pkg -target /
           /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12 -m venv venv
       - name: Dépendances
-        run: venv/bin/python -m pip install -r requirements.txt pyinstaller
+        run: venv/bin/python -m pip install -r requirements.txt pyinstaller delocate
+      - name: Pillow universel (fusion Intel + puce M)
+        run: |
+          mkdir -p wh fused
+          venv/bin/python -m pip download pillow --only-binary=:all: --python-version 3.12 --platform macosx_11_0_arm64 -d wh/arm
+          venv/bin/python -m pip download pillow --only-binary=:all: --python-version 3.12 --platform macosx_11_0_x86_64 -d wh/x86
+          venv/bin/delocate-merge wh/arm/*.whl wh/x86/*.whl -w fused
+          venv/bin/python -m pip install --force-reinstall --no-deps fused/*.whl
       - name: Application + DMG
         run: bash packaging/mac/build_dmg.sh venv/bin/python
       - name: Vérification des deux architectures
