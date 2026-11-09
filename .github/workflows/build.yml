@@ -3,7 +3,9 @@ name: Fabriquer les installateurs
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ["v*"]
+    paths-ignore: ["README.md", "LISEZ-MOI.txt"]
 
 permissions:
   contents: write
