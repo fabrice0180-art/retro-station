@@ -1562,6 +1562,37 @@ class MainWindow(QMainWindow):
 
     def play(self, game, use_shader=True):
         c = BY_ID[game.console]
+        if launch.needs_capsimg(game):
+            lib = "capsimg.dll" if paths.IS_WINDOWS else "capsimg.so"
+            box = QMessageBox(self)
+            box.setWindowTitle("Disquette .ipf")
+            box.setText(f"Ce jeu est une copie de disquette au format .ipf. Pour la lire, l'émulateur a besoin "
+                        f"du fichier « {lib} » (gratuit, fourni par la Software Preservation Society).\n\n"
+                        "1. Télécharge-le sur la page qui va s'ouvrir"
+                        + (" (paquet Windows, version 64 bits : fichier CAPSImg.dll du dossier x64)."
+                           if paths.IS_WINDOWS else " (greffon CAPSImg pour macOS).")
+                        + f"\n2. Importe-le dans Rétro Station comme un jeu : il est rangé tout seul.\n\n"
+                        "Astuce : la version .adf du même jeu fonctionne sans ce fichier.")
+            web = box.addButton("Ouvrir la page de téléchargement", QMessageBox.ButtonRole.ActionRole)
+            imp = box.addButton("Importer le fichier…", QMessageBox.ButtonRole.ActionRole)
+            go = box.addButton("Lancer quand même", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Annuler", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked == web:
+                QDesktopServices.openUrl(QUrl(launch.IPF_PAGE_WIN if paths.IS_WINDOWS else launch.IPF_PAGE_MAC))
+                return
+            if clicked == imp:
+                f, _ = QFileDialog.getOpenFileName(self, f"Choisir {lib}", str(Path.home() / "Downloads"),
+                                                   f"Bibliothèque ({lib} CAPSImg.dll capsimg*)")
+                if f:
+                    import shutil
+                    paths.BIOS.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, paths.BIOS / lib)
+                    QMessageBox.information(self, "Disquette .ipf", f"{lib} est en place. Relance le jeu.")
+                return
+            if clicked != go:
+                return
         miss = launch.missing_bios(game.console)
         if miss:
             box = QMessageBox(self)

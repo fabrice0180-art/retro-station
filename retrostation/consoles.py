@@ -162,6 +162,8 @@ BIOS_FILES = {
     "kick40063.a600": "kick40063.A600",
     "kick40068.a1200": "kick40068.A1200",
     "kick40068.a4000": "kick40068.A4000",
+    "capsimg.dll": "capsimg.dll",          # lecture des disquettes .ipf (Amiga, Atari ST)
+    "capsimg.so": "capsimg.so",
     "000-lo.lo": "neocd/000-lo.lo",
     "ng-lo.rom": "neocd/ng-lo.rom",
 }

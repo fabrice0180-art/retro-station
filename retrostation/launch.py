@@ -11,6 +11,18 @@ class LaunchError(Exception):
 
 
 # ------------------------------------------------------------------ BIOS
+IPF_PAGE_WIN = "http://www.softpres.org/download"
+IPF_PAGE_MAC = "https://fs-uae.net/download#plugins"
+
+
+def needs_capsimg(game) -> bool:
+    """Les disquettes .ipf ont besoin de la bibliothèque CAPS (capsimg) dans le dossier BIOS."""
+    if game.path.suffix.lower() != ".ipf":
+        return False
+    name = "capsimg.dll" if paths.IS_WINDOWS else "capsimg.so"
+    return not any(p.name.lower() == name for p in paths.BIOS.glob("*"))
+
+
 def missing_bios(cid: str):
     """Liste des groupes de BIOS indispensables qui manquent."""
     c = BY_ID[cid]
