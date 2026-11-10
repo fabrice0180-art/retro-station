@@ -97,9 +97,10 @@ CONSOLES = [
     Console("amiga", "Amiga", "Commodore", "AMIGA", "#c8432f", "computer", "retroarch", "puae",
             (".adf", ".adz", ".dms", ".fdi", ".ipf", ".hdf", ".hdz", ".lha", ".uae", ".m3u", ".zip"),
             thumbs="Commodore - Amiga",
-            bios_optional=("kick34005.A500", "kick40068.A1200"),
-            bios_note="kick34005.A500 (Kickstart 1.3) et kick40068.A1200 (3.1) conseillés ; "
-                      "sans eux, un Kickstart libre intégré est utilisé (moins compatible)"),
+            bios_optional=("kick34005.A500", "kick40068.A1200", "amiga-os-130.rom", "amiga-os-310-a1200.rom"),
+            bios_note="Kickstart 1.3 (kick34005.A500 ou amiga-os-130.rom) et 3.1 (kick40068.A1200 ou "
+                      "amiga-os-310-a1200.rom, + rom.key pour Amiga Forever) conseillés ; sans eux, "
+                      "un Kickstart libre intégré est utilisé (moins compatible)"),
     # ---------------- Arcade ----------------
     Console("arcade", "Arcade (Capcom, Konami…)", "Arcade", "ARC", "#6b2fbf", "arcade", "retroarch", "fbneo",
             (".zip", ".7z"), thumbs="FBNeo - Arcade Games",
@@ -162,6 +163,17 @@ BIOS_FILES = {
     "kick40063.a600": "kick40063.A600",
     "kick40068.a1200": "kick40068.A1200",
     "kick40068.a4000": "kick40068.A4000",
+    # Kickstart au format Amiga Forever (acceptés tels quels par l'émulateur Amiga)
+    "amiga-os-120.rom": "amiga-os-120.rom",
+    "amiga-os-130.rom": "amiga-os-130.rom",
+    "amiga-os-204.rom": "amiga-os-204.rom",
+    "amiga-os-205.rom": "amiga-os-205.rom",
+    "amiga-os-310-a600.rom": "amiga-os-310-a600.rom",
+    "amiga-os-310-a1200.rom": "amiga-os-310-a1200.rom",
+    "amiga-os-310-a4000.rom": "amiga-os-310-a4000.rom",
+    "amiga-os-310-cd32.rom": "amiga-os-310-cd32.rom",
+    "amiga-ext-310-cd32.rom": "amiga-ext-310-cd32.rom",
+    "rom.key": "rom.key",
     "capsimg.dll": "capsimg.dll",          # lecture des disquettes .ipf (Amiga, Atari ST)
     "capsimg.so": "capsimg.so",
     "000-lo.lo": "neocd/000-lo.lo",
