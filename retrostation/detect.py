@@ -194,6 +194,13 @@ NEOGEO_PART = re.compile(r"(^|[-_.])(p\d|c\d|m\d|s\d|v\d\d?)(\.|$)|\d{3}-[pcmsv]
 
 def sniff_zip(path: Path):
     try:
+        from . import arcadedb
+        known = arcadedb.console_of(path.stem)
+        if known:
+            return known, ()
+    except Exception:
+        pass
+    try:
         with zipfile.ZipFile(path) as z:
             names = [n for n in z.namelist() if not n.endswith("/")]
             for n in names:
@@ -211,7 +218,7 @@ def sniff_zip(path: Path):
                 return "neogeo", ()
     except (zipfile.BadZipFile, OSError):
         pass
-    return None, ("neogeo",)
+    return None, ("arcade", "neogeo")
 
 
 # ---------------------------------------------------------------- principal
@@ -233,7 +240,14 @@ def detect(path: Path) -> Detection:
         c, cand = sniff_zip(path)
         return Detection("game", c) if c else Detection("unknown", candidates=cand)
     if ext == ".7z":
-        return Detection("unknown", candidates=("neogeo",))
+        try:
+            from . import arcadedb
+            known = arcadedb.console_of(path.stem)
+            if known:
+                return Detection("game", known)
+        except Exception:
+            pass
+        return Detection("unknown", candidates=("arcade", "neogeo"))
 
     if len(ids) == 1:
         return Detection("game", ids[0])

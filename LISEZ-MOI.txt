@@ -5,7 +5,8 @@
 NES, Super Nintendo, Game Boy / Color / Advance, Nintendo 64, GameCube, Wii,
 Master System, Mega Drive, Game Gear, Mega-CD, 32X, Saturn, Dreamcast,
 Neo Geo, Neo Geo CD, Neo Geo Pocket / Color, PSP,
-Atari 2600 / 5200 / 7800 / Lynx / Jaguar / ST, Amiga.
+Atari 2600 / 5200 / 7800 / Lynx / Jaguar / ST, Amiga,
+Arcade (Capcom CPS1 / CPS2 / CPS3 et autres bornes, via FinalBurn Neo).
 
 
 1. INSTALLATION
@@ -65,6 +66,14 @@ Les propositions sont cochées : tu choisis, puis « Mettre à la corbeille ».
 Rien n'est effacé définitivement : tout passe par la corbeille de l'ordinateur.
 Case « Une seule version de chaque jeu » : masque les doublons de régions sans
 rien supprimer (la version française ou européenne est montrée en priorité).
+
+2 quater. ARCADE (CAPCOM CPS1 / CPS2 / CPS3…)
+-------------------------------------------
+Les jeux d'arcade sont des fichiers .zip au nom court (sf2.zip, ssf2t.zip, sfiii3.zip…).
+Rétro Station reconnaît leur vrai titre et leur jaquette grâce à la liste officielle
+de FinalBurn Neo (téléchargée une fois). Les jeux doivent être au format
+FinalBurn Neo ; certains jeux « clones » ont besoin du jeu « parent » à côté
+(par exemple sf2ua.zip a besoin de sf2.zip).
 
 3. BIOS
 -------

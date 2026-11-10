@@ -929,6 +929,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(200, self.fetch_photos)
         for eff in ("lcd", "crt", "smooth"):      # prépare les effets d'écran : lancement plus rapide
             self.cover_pool.submit(launch.find_shader, eff)
+        QTimer.singleShot(300, self.fetch_arcade_names)
 
     # ---------------- construction
     def _build(self):
@@ -1237,6 +1238,29 @@ class MainWindow(QMainWindow):
                 sig.cover.emit(g.key)
         for g in games:
             self.cover_pool.submit(job, g)
+
+    def fetch_arcade_names(self):
+        from . import arcadedb
+        if arcadedb.ready():
+            return
+        sig = self.arcade_signals = Signals()
+        sig.done.connect(lambda ok: ok and self._arcade_ready())
+
+        def job():
+            sig.done.emit(arcadedb.download())
+        self.cover_pool.submit(job)
+
+    def _arcade_ready(self):
+        if any(g.console in ("arcade", "neogeo") for g in self.lib.games):
+            for g in self.lib.games:
+                if g.console in ("arcade", "neogeo"):
+                    try:
+                        covers.cover_file(g).with_suffix(".absent").unlink()
+                    except OSError:
+                        pass
+            self.cover_pending.clear()
+            self._forget_tiles()
+            self.refresh()
 
     def fetch_photos(self):
         todo = [c.id for c in CONSOLES if not photos.best(c.id)]

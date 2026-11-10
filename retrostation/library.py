@@ -5,8 +5,10 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import paths
+from . import paths, arcadedb
 from .consoles import CONSOLES, BY_ID
+
+ARCADE = {"arcade", "neogeo"}   # jeux nommés par un nom court (sf2.zip) : vrai titre via la liste FinalBurn Neo
 from .detect import detect, companions, cue_files, gdi_files, m3u_files, clean_title, region_of
 
 
@@ -78,8 +80,13 @@ class Library:
                 key = f"{c.id}/{relp}"
                 m = self.meta.get(key)
                 stem = os.path.splitext(name)[0]
-                games.append(Game(c.id, Path(full), (m or {}).get("title") or clean_title(stem),
-                                  region_of(stem), key))
+                title = (m or {}).get("title")
+                region = region_of(stem)
+                if not title and c.id in ARCADE:
+                    long_name = arcadedb.title(stem)
+                    if long_name:
+                        title, region = clean_title(long_name), region_of(long_name)
+                games.append(Game(c.id, Path(full), title or clean_title(stem), region, key))
         games.sort(key=lambda g: g.title.lower())
         self.games = games
         return games
@@ -240,8 +247,14 @@ def _norm_title(stem):
     return _re.sub(r"[^a-z0-9]+", "", t) + (f"#d{disc.group(1)}" if disc else "")
 
 
+def _name_of(game):
+    if game.console in ARCADE:
+        return arcadedb.title(game.path.stem) or game.path.stem
+    return game.path.stem
+
+
 def _preference(game):
-    return _pref_stem(game.path.stem)
+    return _pref_stem(_name_of(game))
 
 
 @_lru(maxsize=None)
@@ -325,7 +338,7 @@ def analyze(games, progress=None):
         by_title = {}
         for g in gs:
             if g.key not in flagged:
-                by_title.setdefault(_norm_title(g.path.stem), []).append(g)
+                by_title.setdefault(_norm_title(_name_of(g)), []).append(g)
         for vers in by_title.values():
             if len(vers) > 1:
                 vers.sort(key=_preference)
@@ -350,7 +363,7 @@ def preferred_only(games):
     """Une seule version par jeu (la meilleure), pour un affichage sans doublons."""
     best = {}
     for g in games:
-        k = (g.console, _norm_title(g.path.stem))
+        k = (g.console, _norm_title(_name_of(g)))
         if k not in best or _preference(g) < _preference(best[k]):
             best[k] = g
     keep = set(id(g) for g in best.values())

@@ -100,9 +100,13 @@ CONSOLES = [
             bios_optional=("kick34005.A500", "kick40068.A1200"),
             bios_note="kick34005.A500 (Kickstart 1.3) et kick40068.A1200 (3.1) conseillés ; "
                       "sans eux, un Kickstart libre intégré est utilisé (moins compatible)"),
+    # ---------------- Arcade ----------------
+    Console("arcade", "Arcade (Capcom, Konami…)", "Arcade", "ARC", "#6b2fbf", "arcade", "retroarch", "fbneo",
+            (".zip", ".7z"), thumbs="FBNeo - Arcade Games",
+            bios_note="Capcom CPS1 / CPS2 / CPS3 et des centaines d'autres bornes (jeux au format FinalBurn Neo)"),
     # ---------------- SNK ----------------
     Console("neogeo", "Neo Geo", "SNK", "NEO\nGEO", "#c9a227", "arcade", "retroarch", "fbneo",
-            (".zip", ".7z"), thumbs="SNK - Neo Geo",
+            (".zip", ".7z"), thumbs="FBNeo - Arcade Games",
             bios_required=(("neogeo.zip",),),
             bios_note="neogeo.zip (indispensable : importe-le avec tes jeux, il sera rangé tout seul)"),
     Console("neocd", "Neo Geo CD", "SNK", "NGCD", "#a8842a", "disc", "retroarch", "neocd",
@@ -121,7 +125,7 @@ CONSOLES = [
 ]
 
 BY_ID = {c.id: c for c in CONSOLES}
-FAMILIES = ["Nintendo", "Sega", "Sony", "Atari", "Commodore", "SNK"]
+FAMILIES = ["Nintendo", "Sega", "Sony", "Atari", "Commodore", "SNK", "Arcade"]
 
 # Fichiers BIOS reconnus à l'import -> chemin dans le dossier BIOS
 BIOS_FILES = {

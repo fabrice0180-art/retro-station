@@ -35,6 +35,12 @@ def best_cover(game):
 
 def _candidates(game):
     stem = game.path.stem
+    if game.console in ("arcade", "neogeo"):
+        from . import arcadedb
+        full = arcadedb.title(stem)
+        if not full:
+            return []
+        return [_safe(full)]
     title = clean_title(stem)
     names = [stem]
     first = re.match(r"^(.*?\([^)]*\))", stem)
