@@ -383,8 +383,14 @@ def preview(cid, style, color, size_pct, W=640, H=360):
     if style == "none":
         img = Image.new("RGBA", (W, H), (0, 0, 0, 255))
         asp = ASPECT.get(cid, 4 / 3)
-        w = int(H * asp)
-        hole = ((W - w) // 2, 0, w, H)
+        h = int(H * min(100, size_pct) / 100)
+        w = min(W, int(h * asp))
+        h = int(w / asp)
+        hole = ((W - w) // 2, (H - h) // 2, w, h)
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        m = Image.new("L", (W, H), 255)
+        ImageDraw.Draw(m).rectangle([hole[0], hole[1], hole[0] + w - 1, hole[1] + h - 1], fill=0)
+        img.putalpha(m)
     else:
         img, hole = render_image(cid, style, color, size_pct, W, H)
     x, y, w, h = hole

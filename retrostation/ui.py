@@ -698,6 +698,14 @@ class DisplayDialog(QDialog):
         row.addWidget(self.size_lab)
         form.addRow("Taille de l'écran", row)
         self.size_row = row
+        self.ssize = QSlider(Qt.Orientation.Horizontal)
+        self.ssize.setRange(60, 100)
+        self.ssize_lab = QLabel()
+        srow = QHBoxLayout()
+        srow.addWidget(self.ssize, 1)
+        srow.addWidget(self.ssize_lab)
+        form.addRow("Taille de l'écran de jeu", srow)
+        self.ssize_row = srow
         self.scale = QComboBox()
         self.scale.addItem("Remplir l'écran (proportions respectées)", "fit")
         self.scale.addItem("Pixels parfaits (tous identiques, bords noirs)", "integer")
@@ -719,7 +727,8 @@ class DisplayDialog(QDialog):
             self.window.addItem(f"× {k}", k)
         form.addRow("Taille de la fenêtre", self.window)
         self.res = QComboBox()
-        for k, lab in ((1, "Native (480p)"), (2, "× 2 (720p)"), (3, "× 3 (1080p)"), (4, "× 4 (1440p)"), (6, "× 6 (4K)")):
+        for k, lab in ((1, "× 1 (d'origine, flou)"), (2, "× 2"), (3, "× 3 (Full HD)"), (4, "× 4 (conseillé)"),
+                       (6, "× 6 (4K)")):
             self.res.addItem(lab, k)
         form.addRow("Résolution 3D", self.res)
         self.form = form
@@ -752,6 +761,7 @@ class DisplayDialog(QDialog):
         for w in (self.bezel, self.color, self.scale, self.smooth, self.effect, self.mode, self.window, self.res):
             w.currentIndexChanged.connect(lambda _i: self._changed())
         self.size.valueChanged.connect(lambda _v: self._changed())
+        self.ssize.valueChanged.connect(lambda _v: self._changed())
         start = cid if cid in BY_ID else (win.filter if win.filter in BY_ID else "gb")
         self.console.setCurrentIndex(self.console.findData(start))
         self._load()
@@ -770,6 +780,7 @@ class DisplayDialog(QDialog):
         self._set(self.bezel, d["bezel"])
         self._fill_colors(d["bezel"], d.get("bezel_color", ""))
         self.size.setValue(int(d.get("bezel_size", 82)))
+        self.ssize.setValue(int(d.get("screen_size", 100)))
         self._set(self.scale, d["scale"])
         self._set(self.smooth, bool(d["smooth"]))
         self._set(self.effect, d["effect"])
@@ -790,7 +801,8 @@ class DisplayDialog(QDialog):
 
     def _current(self):
         return {"bezel": self.bezel.currentData(), "bezel_color": self.color.currentData() or "",
-                "bezel_size": self.size.value(), "scale": self.scale.currentData(),
+                "bezel_size": self.size.value(), "screen_size": self.ssize.value(),
+                "scale": self.scale.currentData(),
                 "smooth": bool(self.smooth.currentData()), "effect": self.effect.currentData(),
                 "fullscreen": bool(self.mode.currentData()), "window": self.window.currentData(),
                 "dolphin_res": self.res.currentData()}
@@ -813,18 +825,28 @@ class DisplayDialog(QDialog):
         vis = {self.bezel: not dolphin, self.color: has_bezel and not custom, self.size: has_bezel and not custom,
                self.pick: has_bezel and custom, self.scale: not has_bezel and not dolphin,
                self.smooth: not dolphin, self.effect: not dolphin, self.mode: not has_bezel,
-               self.window: not has_bezel and not dolphin and not self.mode.currentData(), self.res: dolphin}
+               self.window: not has_bezel and not dolphin and not self.mode.currentData(),
+               self.res: dolphin or cid in launch.CONSOLES_3D,
+               self.ssize: not has_bezel and not dolphin and bool(self.mode.currentData())}
         for w, on in vis.items():
-            self.form.setRowVisible(self.size_row if w is self.size else w, on)
+            row = self.size_row if w is self.size else (self.ssize_row if w is self.ssize else w)
+            self.form.setRowVisible(row, on)
         self.size_lab.setText(f"{self.size.value()} %")
+        self.ssize_lab.setText(f"{self.ssize.value()} %")
         self.hint.setText("Wii / GameCube : le contour n'est pas disponible ; la résolution 3D rend l'image "
-                          "plus fine (× 3 conseillé sur ton PC)." if dolphin else
+                          "plus fine (× 3 ou × 4 conseillé sur ton PC)." if dolphin else
+                          "Résolution 3D : plus elle est haute, plus l'image est fine (× 4 conseillé). "
+                          "Effet « Télé cathodique » ou « Lissage » : moins de gros pixels. "
+                          "Taille de l'écran : rétrécit l'image, avec un cadre noir autour." if cid in launch.CONSOLES_3D
+                          else
+                          "Gros pixels ? Choisis l'effet « Télé cathodique » ou « Lissage intelligent », "
+                          "et réduis la taille de l'écran de jeu. "
                           "Avec un contour, le jeu s'affiche toujours en plein écran. Ton image de contour : "
                           "un PNG (idéalement 1920 × 1080) dont la zone de l'écran est transparente. "
                           "« Pixels parfaits » évite les pixels de tailles inégales.")
         try:
             img = self.bz.preview(cid, style if not dolphin else "none", self.color.currentData() or "",
-                                  self.size.value(), 400, 225)
+                                  self.size.value() if has_bezel else self.ssize.value(), 400, 225)
             import io
             buf = io.BytesIO()
             img.save(buf, "PNG")

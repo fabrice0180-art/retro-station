@@ -27,7 +27,12 @@ def missing_bios(cid: str):
 # ------------------------------------------------------------------ RetroArch
 HANDHELDS = {"gb", "gbc", "gba", "gg", "ngp", "ngpc", "psp"}
 DISPLAY_DEFAULTS = {"fullscreen": True, "bezel": "none", "bezel_color": "", "bezel_size": 82,
-                    "scale": "fit", "smooth": False, "effect": "none", "window": 4, "dolphin_res": 3}
+                    "screen_size": 100, "scale": "fit", "smooth": False, "effect": "none", "window": 4,
+                    "dolphin_res": 3}
+CONSOLES_3D = {"n64", "psp", "dreamcast"}           # résolution 3D augmentable dans RetroArch
+SMOOTH_DEFAULT = {"n64", "psp", "dreamcast", "saturn"}
+ASPECTS = {"gb": 10 / 9, "gbc": 10 / 9, "gg": 10 / 9, "gba": 3 / 2, "ngp": 20 / 19, "ngpc": 20 / 19,
+           "psp": 480 / 272}
 EFFECTS = {"none": "Aucun", "lcd": "Écran LCD (grille de pixels)", "crt": "Télé cathodique (lignes)",
            "smooth": "Lissage intelligent (xBRZ)"}
 SHADER_FILES = {
@@ -40,8 +45,12 @@ SHADER_FILES = {
 def display_for(settings: dict, cid: str) -> dict:
     """Réglages d'affichage d'une console (valeurs par défaut + choix de l'utilisateur)."""
     d = dict(DISPLAY_DEFAULTS)
-    if cid in HANDHELDS:   # consoles portables : contour + effet LCD par défaut
+    if cid in HANDHELDS:            # consoles portables : contour + effet LCD par défaut
         d.update(bezel="handheld", bezel_color="Gris clair", effect="lcd")
+    elif cid in SMOOTH_DEFAULT:     # consoles 3D : image affinée et lissée
+        d.update(smooth=True, dolphin_res=4)
+    else:                           # consoles de salon 2D : effet télé, fini les gros pixels carrés
+        d.update(effect="crt")
     d["fullscreen"] = settings.get("fullscreen", True)
     d.update(settings.get("display", {}).get(cid, {}))
     return d
@@ -72,7 +81,40 @@ def find_shader(effect: str):
     return found
 
 
-def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True) -> Path:
+RES3D_OPTIONS = {
+    "n64": lambda f: {"mupen64plus-EnableNativeResFactor": str(f), "mupen64plus-rdp-plugin": "gliden64"},
+    "psp": lambda f: {"ppsspp_internal_resolution": f"{480 * f}x{272 * f}"},
+    "dreamcast": lambda f: {"reicast_internal_resolution": f"{640 * f}x{480 * f}"},
+}
+
+
+def write_core_options(cid, disp) -> Path:
+    """Options des moteurs (fichier partagé, les réglages faits en jeu y sont gardés aussi)."""
+    path = paths.ENGINES / "options-moteurs.cfg"
+    lines = {}
+    if path.exists():
+        for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if "=" in ln:
+                k, v = ln.split("=", 1)
+                lines[k.strip()] = v.strip()
+    if cid in RES3D_OPTIONS:
+        f = max(1, min(6, int(disp.get("dolphin_res", 4))))
+        for k, v in RES3D_OPTIONS[cid](f).items():
+            lines[k] = f'"{v}"'
+    path.write_text("".join(f"{k} = {v}\n" for k, v in lines.items()), encoding="utf-8")
+    return path
+
+
+def screen_rect(cid, pct, W, H):
+    """Écran du jeu centré, à pct % de la hauteur, aux proportions de la console."""
+    asp = ASPECTS.get(cid, 4 / 3)
+    h = H * pct / 100
+    w = min(W, h * asp)
+    h = w / asp
+    return int((W - w) / 2), int((H - h) / 2), int(w), int(h)
+
+
+def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None, core_opts=None) -> Path:
     """bezel = (fichier .cfg du contour, (x, y, w, h) du trou) ou None."""
     paths.ENGINES.mkdir(parents=True, exist_ok=True)
     cfg = paths.ENGINES / "retrostation.cfg"
@@ -103,7 +145,16 @@ def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True) -> Path:
         "log_to_file_timestamp": "false",
         "log_dir": str(paths.LOGS),
     }
-    if bezel:
+    if core_opts:
+        vals.update({"global_core_options": "true", "core_options_path": str(core_opts)})
+    if not bezel and viewport:
+        x, y, w, h = viewport
+        vals.update({
+            "input_overlay_enable": "false", "video_scale_integer": "false", "video_aspect_ratio_auto": "false",
+            "aspect_ratio_index": "23", "custom_viewport_x": str(x), "custom_viewport_y": str(y),
+            "custom_viewport_width": str(w), "custom_viewport_height": str(h),
+        })
+    elif bezel:
         ovl, (x, y, w, h) = bezel
         vals.update({
             "input_overlay_enable": "true", "input_overlay": str(ovl), "input_overlay_opacity": "1.000000",
@@ -230,6 +281,29 @@ def prepare_dolphin(settings: dict, cid: str = "wii"):
         _ini_update(conf / "WiimoteNew.ini", "Wiimote1", WII_PAD if pad else WII_KB, replace_section=True)
 
 
+# ------------------------------------------------------------------ netteté Windows (mise à l'échelle)
+def ensure_sharp_windows(exe):
+    """Windows agrandit en flou les programmes qui ne gèrent pas la mise à l'échelle (125 %, 150 %…).
+    On déclare RetroArch « compatible haute résolution » : image nette, à la vraie résolution de l'écran
+    (et le jeu tombe pile dans son contour)."""
+    if not paths.IS_WINDOWS:
+        return
+    try:
+        import winreg
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                               r"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers")
+        try:
+            cur, _ = winreg.QueryValueEx(key, str(exe))
+        except OSError:
+            cur = ""
+        if "HIGHDPIAWARE" not in cur:
+            flags = [f for f in cur.replace("~", "").split() if f]
+            winreg.SetValueEx(key, str(exe), 0, winreg.REG_SZ, "~ " + " ".join(flags + ["HIGHDPIAWARE"]))
+        winreg.CloseKey(key)
+    except Exception:
+        pass
+
+
 # ------------------------------------------------------------------ commande
 def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     """Renvoie (programme, arguments, dossier de travail, effet utilisé ?)."""
@@ -244,6 +318,7 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     exe = engines.retroarch_exe()
     if not exe:
         raise LaunchError("RetroArch (moteur principal) n'est pas encore installé.")
+    ensure_sharp_windows(exe)
     core = engines.core_path(c.core)
     if not core.exists():
         raise LaunchError(f"Le moteur « {c.core} » pour {c.name} n'est pas encore installé.")
@@ -256,7 +331,11 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
                                           int(disp.get("bezel_size", 82)), int(screen[0]), int(screen[1]))
         except Exception:
             bezel = None   # pas de contour plutôt qu'un jeu qui ne démarre pas
-    cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True))
+    viewport = None
+    if not bezel and disp.get("fullscreen", True) and int(disp.get("screen_size", 100)) < 100:
+        viewport = screen_rect(game.console, int(disp["screen_size"]), int(screen[0]), int(screen[1]))
+    core_opts = write_core_options(game.console, disp)
+    cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True), viewport, core_opts)
     args = ["-L", str(core), rom, "--appendconfig", str(cfg)]
     shader = find_shader(disp.get("effect", "none")) if use_shader else None
     if shader:
