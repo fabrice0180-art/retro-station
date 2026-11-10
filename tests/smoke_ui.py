@@ -68,6 +68,13 @@ def main():
     assert w.model.rowCount() == (n_nes + n_gb) // 100
     w.search.setText("")
     w.populate()
+    w.set_letter("J")
+    assert w.model.rowCount() == n_nes + n_gb, w.model.rowCount()
+    w.set_letter("Z")
+    assert w.model.rowCount() == 0
+    w.set_letter("")
+    assert ui.first_letter("The Legend of Test") == "L" and ui.first_letter("1942") == "#" \
+        and ui.first_letter("Éclair") == "E"
 
     t = time.perf_counter()
     for _ in range(40):

@@ -59,6 +59,11 @@ QPushButton:hover {{ background: #2c3044; }}
 QPushButton:focus {{ border-color: {ACCENT}; }}
 QPushButton#primary {{ background: {ACCENT}; border: none; color: #1a0d07; font-weight: 700; padding: 10px 18px; }}
 QPushButton#primary:hover {{ background: #ff8f61; }}
+QPushButton#letter {{ background: transparent; border: none; border-radius: 6px; padding: 3px 6px;
+    min-width: 18px; color: #9aa0b8; font-weight: 600; }}
+QPushButton#letter:hover {{ background: #232636; color: white; }}
+QPushButton#letter:checked {{ background: {ACCENT}; color: #1a0d07; }}
+QPushButton#letter:disabled {{ color: #3a3e52; }}
 QPushButton#big {{ background: {ACCENT}; border: none; color: #1a0d07; font-size: 16px; font-weight: 800; padding: 16px 30px; border-radius: 14px; }}
 QProgressBar {{ background: #1c1f2c; border: none; border-radius: 6px; height: 12px; text-align: center; }}
 QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
@@ -253,6 +258,21 @@ def build_tile(game, cover) -> QImage:
         p.drawImage(QRectF(TW - bw - 5, TH - bh - 5, bw, bh), badge)
     p.end()
     return out
+
+
+def first_letter(title: str) -> str:
+    """Lettre de classement : « The Legend… » et « Le Roi… » sont rangés à L / R ; chiffres = « # »."""
+    import unicodedata
+    t = title.strip()
+    for art in ("The ", "Le ", "La ", "Les ", "L'"):
+        if t.startswith(art) and len(t) > len(art):
+            t = t[len(art):]
+            break
+    for ch in t:
+        if ch.isalnum():
+            ch = unicodedata.normalize("NFKD", ch)[0].upper()
+            return "#" if ch.isdigit() else (ch if "A" <= ch <= "Z" else "#")
+    return "#"
 
 
 class TileSignals(QObject):
@@ -1137,6 +1157,22 @@ class MainWindow(QMainWindow):
         self.hide_var.setChecked(self.settings.get("all_versions", False))
         self.hide_var.toggled.connect(self._toggle_variants)
         mv.addWidget(self.hide_var)
+        # barre de lettres : Tous, 0-9, A…Z
+        abc = QHBoxLayout()
+        abc.setSpacing(2)
+        self.letter = ""
+        self.letter_btns = {}
+        for key, label in [("", "Tous"), ("#", "0-9")] + [(ch, ch) for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]:
+            b = QPushButton(label, objectName="letter")
+            b.setCheckable(True)
+            b.setChecked(key == "")
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _=False, k=key: self.set_letter(k))
+            abc.addWidget(b)
+            self.letter_btns[key] = b
+        abc.addStretch(1)
+        mv.addLayout(abc)
 
         self.stack = QStackedWidget()
         self.grid = QListView(objectName="grid")
@@ -1284,6 +1320,12 @@ class MainWindow(QMainWindow):
         q = self.search.text().strip().lower()
         if q:
             gs = [g for g in gs if q in g.title.lower()]
+        present = {first_letter(g.title) for g in gs}
+        for k, b in self.letter_btns.items():
+            b.setEnabled(k == "" or k in present or k == self.letter)
+            b.setChecked(k == self.letter)
+        if self.letter:
+            gs = [g for g in gs if first_letter(g.title) == self.letter]
         self.model.set_games(gs)
         n = len(gs)
         self.subtitle.setText(f"{n} jeu" + ("x" if n > 1 else ""))
@@ -1293,6 +1335,10 @@ class MainWindow(QMainWindow):
             self.grid.scrollToTop()
 
     def apply_search(self):
+        self.populate()
+
+    def set_letter(self, key):
+        self.letter = key
         self.populate()
 
     # ---------------- vignettes : préparées en tâche de fond, seulement pour ce qui est à l'écran
