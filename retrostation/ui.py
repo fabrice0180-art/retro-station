@@ -24,7 +24,15 @@ from . import paths, engines, covers, launch, gamepad, photos
 from .consoles import CONSOLES, BY_ID, FAMILIES
 from .library import Library, plan_import, execute_import, console_dir, analyze, preferred_only
 
-TW, TH = 168, 232          # taille d'une jaquette dans la grille
+TW, TH = 140, 194          # taille d'une jaquette dans la grille (réglable)
+MINI_W, MINI_H = 168, 232  # taille des jaquettes réduites gardées sur disque
+TILE_SIZES = (104, 168)    # largeur mini / maxi du curseur
+
+
+def set_tile_width(w):
+    global TW, TH
+    TW = int(max(TILE_SIZES[0], min(TILE_SIZES[1], w)))
+    TH = int(round(TW * 232 / 168))
 ACCENT = "#ff7a45"
 
 STYLE = f"""
@@ -69,7 +77,7 @@ QToolTip {{ background: #232636; color: #e8eaf2; border: 1px solid #30354b; padd
 
 # ------------------------------------------------------------------ réglages
 DEFAULTS = {"fullscreen": True, "move_files": False, "dolphin_controls": "auto", "asked_engines": False,
-            "confirm_quit": True, "hide_variants": False}
+            "confirm_quit": True, "all_versions": False, "tile_w": 140}
 
 
 def load_settings():
@@ -187,7 +195,7 @@ def _mini_cover_image(cover: Path) -> QImage:
     img = QImage(str(cover))
     if img.isNull():
         return img
-    img = img.scaled(TW, TH, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    img = img.scaled(MINI_W, MINI_H, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
     try:
         mini.parent.mkdir(parents=True, exist_ok=True)
         img.save(str(mini), "PNG")
@@ -210,6 +218,9 @@ def build_tile(game, cover) -> QImage:
     img = _mini_cover_image(cover) if cover else QImage()
     if not img.isNull():
         p.fillRect(0, 0, TW, TH, QColor("#0d0e14"))
+        # la jaquette remplit toute la vignette, centrée (les bords qui dépassent sont rognés)
+        img = img.scaled(TW, TH, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                         Qt.TransformationMode.SmoothTransformation)
         p.drawImage((TW - img.width()) // 2, (TH - img.height()) // 2, img)
     else:
         base = QColor(c.color)
@@ -218,23 +229,27 @@ def build_tile(game, cover) -> QImage:
         g.setColorAt(1, base.darker(190))
         p.fillRect(0, 0, TW, TH, g)
         card = _card_images.get((c.id, 136, 86))
+        k = TW / 168
         if card is not None:
-            p.drawImage((TW - card.width()) // 2, 34, card)
+            cw, ch = int(136 * k), int(86 * k)
+            p.drawImage(QRectF((TW - cw) / 2, 34 * k, cw, ch), card)
         f = QFont()
-        f.setPixelSize(15)
+        f.setPixelSize(max(11, int(15 * k)))
         f.setBold(True)
         p.setFont(f)
         p.setPen(QColor("white"))
-        p.drawText(QRectF(12, 132, TW - 24, TH - 150),
+        p.drawText(QRectF(10, 132 * k, TW - 20, TH - 140 * k),
                    int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop) | int(Qt.TextFlag.TextWordWrap),
                    game.title)
     p.setClipping(False)
     badge = _card_images.get((c.id, 52, 32))
     if badge is not None:
+        k = max(0.75, TW / 168)
+        bw, bh = 52 * k, 32 * k
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(0, 0, 0, 120))
-        p.drawRoundedRect(QRectF(TW - 59, TH - 39, 56, 36), 8, 8)
-        p.drawImage(TW - 57, TH - 37, badge)
+        p.drawRoundedRect(QRectF(TW - bw - 7, TH - bh - 7, bw + 4, bh + 4), 7, 7)
+        p.drawImage(QRectF(TW - bw - 5, TH - bh - 5, bw, bh), badge)
     p.end()
     return out
 
@@ -302,7 +317,7 @@ class TileDelegate(QStyledItemDelegate):
         self.elided = {}
 
     def sizeHint(self, option, index):
-        return QSize(TW + 26, TH + 52)
+        return QSize(TW + 22, TH + 50)
 
     def paint(self, p, option, index):
         g = index.data(Qt.ItemDataRole.UserRole)
@@ -850,6 +865,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = load_settings()
+        set_tile_width(self.settings.get("tile_w", 140))
         self.lib = Library()
         self.filter = "all"
         self.proc = None
@@ -949,6 +965,21 @@ class MainWindow(QMainWindow):
         self.search_timer = QTimer(self, singleShot=True, interval=220, timeout=self.apply_search)
         self.search.textChanged.connect(lambda _t: self.search_timer.start())
         top.addWidget(self.search)
+        size_box = QHBoxLayout()
+        size_box.setSpacing(4)
+        small = QLabel("▫")
+        big = QLabel("◻")
+        self.size_slider = QSlider(Qt.Orientation.Horizontal)
+        self.size_slider.setRange(*TILE_SIZES)
+        self.size_slider.setFixedWidth(110)
+        self.size_slider.setToolTip("Taille des jaquettes")
+        self.size_slider.setValue(TW)
+        self.size_slider.valueChanged.connect(lambda v: self.size_timer.start())
+        self.size_timer = QTimer(self, singleShot=True, interval=120, timeout=self._apply_tile_size)
+        size_box.addWidget(small)
+        size_box.addWidget(self.size_slider)
+        size_box.addWidget(big)
+        top.addLayout(size_box)
         imp = QPushButton("＋  Importer des jeux", objectName="primary")
         imp.setToolTip("Sélectionne tous tes jeux d'un coup : ils sont rangés tout seuls par console")
         imp.clicked.connect(lambda: self.import_files())
@@ -961,8 +992,8 @@ class MainWindow(QMainWindow):
         clean.clicked.connect(lambda: CleanupDialog(self).exec())
         top.addWidget(clean)
         mv.addLayout(top)
-        self.hide_var = QCheckBox("Une seule version de chaque jeu (masquer les doublons de régions)")
-        self.hide_var.setChecked(self.settings.get("hide_variants", False))
+        self.hide_var = QCheckBox("Afficher toutes les versions d'un même jeu (régions, révisions, copies)")
+        self.hide_var.setChecked(self.settings.get("all_versions", False))
         self.hide_var.toggled.connect(self._toggle_variants)
         mv.addWidget(self.hide_var)
 
@@ -975,7 +1006,7 @@ class MainWindow(QMainWindow):
         g.setViewMode(QListView.ViewMode.IconMode)
         g.setResizeMode(QListView.ResizeMode.Adjust)
         g.setMovement(QListView.Movement.Static)
-        g.setGridSize(QSize(TW + 30, TH + 58))
+        g.setGridSize(QSize(TW + 26, TH + 54))
         g.setUniformItemSizes(True)
         g.setMouseTracking(True)
         g.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -1020,7 +1051,10 @@ class MainWindow(QMainWindow):
     # ---------------- données
     def refresh(self):
         self.lib.scan()
-        counts = self.lib.counts()
+        shown = self.lib.games if self.settings.get("all_versions") else preferred_only(self.lib.games)
+        counts = {c.id: 0 for c in CONSOLES}
+        for g in shown:
+            counts[g.console] += 1
         keep = self.filter
         self.sidebar.blockSignals(True)
         self.sidebar.clear()
@@ -1041,7 +1075,7 @@ class MainWindow(QMainWindow):
             self.sidebar.addItem(it)
             return it
 
-        total = len(self.lib.games)
+        total = len(shown)
         add(f"🎮  Tous les jeux   {total}", "all")
         add("⭐  Favoris", "fav")
         add("🕘  Récents", "recent")
@@ -1072,14 +1106,22 @@ class MainWindow(QMainWindow):
             self.populate()
 
     def _toggle_variants(self, on):
-        self.settings["hide_variants"] = bool(on)
+        self.settings["all_versions"] = bool(on)
         save_settings(self.settings)
-        self.populate()
+        self.refresh()
+
+    def _apply_tile_size(self):
+        set_tile_width(self.size_slider.value())
+        self.settings["tile_w"] = TW
+        save_settings(self.settings)
+        self.grid.setGridSize(QSize(TW + 26, TH + 54))
+        self._forget_tiles()
+        self.grid.doItemsLayout()
 
     def visible_games(self):
         gs = self.lib.games
-        if self.settings.get("hide_variants"):
-            gs = preferred_only(gs)
+        if not self.settings.get("all_versions"):
+            gs = preferred_only(gs)          # un seul exemplaire de chaque jeu par console
         if self.filter == "fav":
             gs = [g for g in gs if self.lib.meta.get(g.key, {}).get("fav")]
         elif self.filter == "recent":

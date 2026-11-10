@@ -28,6 +28,8 @@ def main():
         for i in range(n):
             name = f"Jeu Test {i:04d}" + (" Zelda" if i % 100 == 0 else "") + " (Europe)"
             (d / (name + ext)).write_bytes(head + bytes(64))
+    dup = console_dir("nes")
+    (dup / "Jeu Test 0001 (USA).nes").write_bytes(b"NES\x1a" + bytes(64))   # même jeu, autre région
     covers.download_cover = lambda g: None
     photos.download = lambda cid: False
     ui.MainWindow._first_run = lambda self: None
@@ -47,7 +49,7 @@ def main():
             time.sleep(0.005)
 
     pump(1.5)
-    assert w.model.rowCount() == n_nes + n_gb, w.model.rowCount()
+    assert w.model.rowCount() == n_nes + n_gb, w.model.rowCount()   # le doublon USA est masqué
     assert w.tile_cache, "aucune vignette dessinée"
 
     t = time.perf_counter()
@@ -89,9 +91,13 @@ def main():
     notice(f"Analyse des doublons ({n_nes + n_gb} jeux) : {time.perf_counter() - t:.2f} s, "
            f"{len(cd._checked())} fichiers proposés")
     cd.close()
-    w.hide_var.setChecked(True)
-    assert w.model.rowCount() >= 1
+    w.hide_var.setChecked(True)      # toutes les versions
+    assert w.model.rowCount() == n_nes + n_gb + 1
     w.hide_var.setChecked(False)
+    w.size_slider.setValue(110)
+    w._apply_tile_size()
+    pump(0.5)
+    assert ui.TW == 110 and w.tile_cache
     w._select_filter("all")
     w._pad_poll()
     w._cycle_console(1)
