@@ -1571,7 +1571,7 @@ class MainWindow(QMainWindow):
                         "1. Télécharge-le sur la page qui va s'ouvrir"
                         + (" (paquet Windows, version 64 bits : fichier CAPSImg.dll du dossier x64)."
                            if paths.IS_WINDOWS else " (greffon CAPSImg pour macOS).")
-                        + f"\n2. Importe-le dans Rétro Station comme un jeu : il est rangé tout seul.\n\n"
+                        + "\n2. Importe-le dans Rétro Station comme un jeu : il est rangé tout seul.\n\n"
                         "Astuce : la version .adf du même jeu fonctionne sans ce fichier.")
             web = box.addButton("Ouvrir la page de téléchargement", QMessageBox.ButtonRole.ActionRole)
             imp = box.addButton("Importer le fichier…", QMessageBox.ButtonRole.ActionRole)
