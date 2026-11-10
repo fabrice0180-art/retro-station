@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QListWidget, 
 
 from . import paths, engines, covers, launch, gamepad, photos
 from .consoles import CONSOLES, BY_ID, FAMILIES
-from .library import Library, plan_import, execute_import, console_dir, analyze, preferred_only
+from .library import (Library, plan_import, execute_import, console_dir, analyze, preferred_only,
+                      export_games, EXPORT_STYLES)
 
 TW, TH = 140, 194          # taille d'une jaquette dans la grille (réglable)
 MINI_W, MINI_H = 168, 232  # taille des jaquettes réduites gardées sur disque
@@ -493,6 +494,9 @@ class SettingsDialog(QDialog):
             if not c.bios_required:
                 ok = "➖"
             lines.append(f"{ok}  {c.name} — {c.bios_note}")
+        mv = engines.mame_version()
+        lines.append(f"ℹ️  Arcade (MAME) — version de MAME : {mv or 'pas encore installé'} "
+                     "(tes jeux MAME doivent correspondre à cette version)")
         QMessageBox.information(self, "État des BIOS",
                                 "Les BIOS se copient depuis ta propre console.\n"
                                 "Importe-les comme des jeux : ils sont rangés tout seuls.\n\n" + "\n".join(lines))
@@ -655,6 +659,116 @@ class CleanupDialog(QDialog):
         if failed:
             msg += f"\n{failed} fichier(s) n'ont pas pu être déplacés."
         QMessageBox.information(self, "Ménage", msg)
+        self.accept()
+
+
+# ------------------------------------------------------------------ export vers une autre machine
+class ExportDialog(QDialog):
+    def __init__(self, win, only=None):
+        super().__init__(win)
+        self.win = win
+        self.setWindowTitle("Exporter les jeux")
+        self.setMinimumWidth(620)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 18)
+        lay.setSpacing(10)
+        lay.addWidget(QLabel("Exporter les jeux vers un autre appareil", objectName="title"))
+        info = QLabel("Copie tes jeux, rangés par console, dans un dossier (disque externe, clé USB, carte SD…). "
+                      "Rien n'est retiré de Rétro Station.", objectName="subtitle")
+        info.setWordWrap(True)
+        lay.addWidget(info)
+        self.style = QComboBox()
+        for k, v in EXPORT_STYLES.items():
+            self.style.addItem(v, k)
+        form = QFormLayout()
+        form.addRow("Noms des dossiers", self.style)
+        lay.addLayout(form)
+        self.list = QListWidget()
+        self.list.setStyleSheet("QListWidget { background:#191b25; border:none; border-radius:10px; padding:6px; }")
+        self.list.setIconSize(QSize(40, 25))
+        counts = {}
+        for g in win.lib.games:
+            counts[g.console] = counts.get(g.console, 0) + 1
+        for c in CONSOLES:
+            if not counts.get(c.id):
+                continue
+            it = QListWidgetItem(QIcon(console_card(c.id, 40, 25)), f"{c.name}   ({counts[c.id]})")
+            it.setData(Qt.ItemDataRole.UserRole, c.id)
+            it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(Qt.CheckState.Checked if (only is None or only == c.id) else Qt.CheckState.Unchecked)
+            self.list.addItem(it)
+        lay.addWidget(self.list, 1)
+        self.one = QCheckBox("Une seule version de chaque jeu (sans les doublons de régions)")
+        self.one.setChecked(not win.settings.get("all_versions"))
+        self.bios = QCheckBox("Copier aussi les BIOS")
+        self.bios.setChecked(True)
+        lay.addWidget(self.one)
+        lay.addWidget(self.bios)
+        row = QHBoxLayout()
+        self.dest_lab = QLabel("Aucun dossier choisi", objectName="subtitle")
+        pick = QPushButton("📁  Choisir le dossier de destination…")
+        pick.clicked.connect(lambda: self._pick())
+        row.addWidget(pick)
+        row.addWidget(self.dest_lab, 1)
+        lay.addLayout(row)
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        close = QPushButton("Fermer")
+        close.clicked.connect(lambda: self.reject())
+        self.go = QPushButton("📤  Exporter", objectName="primary")
+        self.go.setEnabled(False)
+        self.go.clicked.connect(lambda: self._export())
+        btns.addWidget(close)
+        btns.addWidget(self.go)
+        lay.addLayout(btns)
+        self.dest = None
+
+    def _pick(self):
+        d = QFileDialog.getExistingDirectory(self, "Dossier de destination", str(Path.home()))
+        if d:
+            self.dest = Path(d)
+            self.dest_lab.setText(str(self.dest))
+            self.go.setEnabled(True)
+
+    def selected_games(self):
+        chosen = {self.list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.list.count())
+                  if self.list.item(i).checkState() == Qt.CheckState.Checked}
+        gs = [g for g in self.win.lib.games if g.console in chosen]
+        return preferred_only(gs) if self.one.isChecked() else gs
+
+    def _export(self):
+        games = self.selected_games()
+        if not games or not self.dest:
+            return
+        style, bios = self.style.currentData(), self.bios.isChecked()
+        self.progress = QProgressDialog("Copie des jeux…", None, 0, 1000, self)
+        self.progress.setWindowTitle("Export")
+        self.progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress.setMinimumDuration(0)
+        self.progress.setMinimumWidth(460)
+        dest = self.dest
+
+        def work(sig):
+            return export_games(games, dest, style, bios, lambda i, n, name: sig.progress.emit(name, i / max(n, 1)))
+        self.task = Task(work)
+        self.task.signals.progress.connect(lambda name, f: (self.progress.setValue(int(f * 1000)),
+                                                            self.progress.setLabelText(f"Copie : {name}")))
+        self.task.signals.done.connect(self._done)
+        QThreadPool.globalInstance().start(self.task)
+
+    def _done(self, res):
+        self.progress.close()
+        if isinstance(res, Exception):
+            QMessageBox.warning(self, "Export", f"Erreur : {res}")
+            return
+        copied, skipped, errors = res
+        msg = f"{copied} fichier(s) copié(s) dans :\n{self.dest}"
+        if skipped:
+            msg += f"\n{skipped} fichier(s) déjà présents, laissés tels quels."
+        if errors:
+            msg += "\n\nProblèmes :\n" + "\n".join(errors[:8])
+        QMessageBox.information(self, "Export terminé", msg)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.dest)))
         self.accept()
 
 
@@ -1010,6 +1124,10 @@ class MainWindow(QMainWindow):
         imp_dir = QPushButton("📁  Un dossier entier")
         imp_dir.clicked.connect(lambda: self.import_folder())
         top.addWidget(imp_dir)
+        export = QPushButton("📤  Exporter")
+        export.setToolTip("Copier tes jeux dans un dossier pour une autre machine")
+        export.clicked.connect(lambda: ExportDialog(self).exec())
+        top.addWidget(export)
         clean = QPushButton("🧹  Ménage")
         clean.setToolTip("Trouver les doublons et les ROMs abîmées")
         clean.clicked.connect(lambda: CleanupDialog(self).exec())
@@ -1289,6 +1407,7 @@ class MainWindow(QMainWindow):
         m.addAction("🖥  Affichage et contour d'écran…", lambda: DisplayDialog(self, cid).exec())
         m.addAction("🎮  Régler les manettes…" if BY_ID[cid].engine == "dolphin" else "🎮  Régler les commandes…",
                     lambda: self._controls_for(cid))
+        m.addAction("📤  Exporter les jeux de cette console…", lambda: ExportDialog(self, cid).exec())
         m.addAction("📷  Mettre ma propre photo de la console…", lambda: self._set_console_photo(cid))
         if photos.custom(cid).exists():
             m.addAction("↺  Remettre la photo d'origine", lambda: self._reset_console_photo(cid))

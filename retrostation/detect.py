@@ -193,11 +193,13 @@ NEOGEO_PART = re.compile(r"(^|[-_.])(p\d|c\d|m\d|s\d|v\d\d?)(\.|$)|\d{3}-[pcmsv]
 
 
 def sniff_zip(path: Path):
+    arcade_list = False
     try:
         from . import arcadedb
         known = arcadedb.console_of(path.stem)
         if known:
             return known, ()
+        arcade_list = arcadedb.ready()
     except Exception:
         pass
     try:
@@ -218,7 +220,9 @@ def sniff_zip(path: Path):
                 return "neogeo", ()
     except (zipfile.BadZipFile, OSError):
         pass
-    return None, ("arcade", "neogeo")
+    if arcade_list:     # borne inconnue de FinalBurn Neo : on la confie à MAME
+        return "mame", ()
+    return None, ("arcade", "mame", "neogeo")
 
 
 # ---------------------------------------------------------------- principal
@@ -247,7 +251,7 @@ def detect(path: Path) -> Detection:
                 return Detection("game", known)
         except Exception:
             pass
-        return Detection("unknown", candidates=("arcade", "neogeo"))
+        return Detection("unknown", candidates=("arcade", "mame", "neogeo"))
 
     if len(ids) == 1:
         return Detection("game", ids[0])

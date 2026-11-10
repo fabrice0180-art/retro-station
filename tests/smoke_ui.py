@@ -94,6 +94,15 @@ def main():
     w.hide_var.setChecked(True)      # toutes les versions
     assert w.model.rowCount() == n_nes + n_gb + 1
     w.hide_var.setChecked(False)
+    ed = ui.ExportDialog(w, "gb")
+    ed.dest = Path(tempfile.mkdtemp())
+    ed.style.setCurrentIndex(ed.style.findData("batocera"))
+    from retrostation.library import export_games
+    t = time.perf_counter()
+    copied, skipped, errs = export_games(ed.selected_games(), ed.dest, "batocera", False)
+    assert copied == n_gb and not errs and (ed.dest / "roms" / "gb").is_dir(), (copied, errs)
+    notice(f"Export de {copied} jeux Game Boy : {time.perf_counter() - t:.2f} s")
+    ed.close()
     w.size_slider.setValue(110)
     w._apply_tile_size()
     pump(0.5)

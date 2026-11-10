@@ -5,7 +5,7 @@ import platform
 from pathlib import Path
 
 APP_NAME = "Rétro Station"
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 PUBLISHER = "Fabrice M."
 
 IS_WINDOWS = sys.platform.startswith("win")

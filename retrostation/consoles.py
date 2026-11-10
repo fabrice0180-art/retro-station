@@ -104,6 +104,9 @@ CONSOLES = [
     Console("arcade", "Arcade (Capcom, Konami…)", "Arcade", "ARC", "#6b2fbf", "arcade", "retroarch", "fbneo",
             (".zip", ".7z"), thumbs="FBNeo - Arcade Games",
             bios_note="Capcom CPS1 / CPS2 / CPS3 et des centaines d'autres bornes (jeux au format FinalBurn Neo)"),
+    Console("mame", "Arcade (MAME)", "Arcade", "MAME", "#2f3a8f", "arcade", "retroarch", "mame",
+            (".zip", ".7z"), thumbs="MAME",
+            bios_note="jeux au format de la version de MAME indiquée dans Paramètres > État des BIOS"),
     # ---------------- SNK ----------------
     Console("neogeo", "Neo Geo", "SNK", "NEO\nGEO", "#c9a227", "arcade", "retroarch", "fbneo",
             (".zip", ".7z"), thumbs="FBNeo - Arcade Games",

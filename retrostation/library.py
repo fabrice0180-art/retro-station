@@ -368,3 +368,64 @@ def preferred_only(games):
             best[k] = g
     keep = set(id(g) for g in best.values())
     return [g for g in games if id(g) in keep]
+
+
+# ------------------------------------------------------------------ export vers une autre machine
+EXPORT_STYLES = {
+    "retrostation": "Rétro Station (noms en clair : « Super Nintendo », « Mega Drive »…)",
+    "batocera": "Batocera / Recalbox / Knulli / consoles portables rétro (snes, megadrive…)",
+}
+BATOCERA = {"nes": "nes", "snes": "snes", "gb": "gb", "gbc": "gbc", "gba": "gba", "n64": "n64", "gc": "gamecube",
+            "wii": "wii", "sms": "mastersystem", "md": "megadrive", "gg": "gamegear", "segacd": "segacd",
+            "32x": "sega32x", "saturn": "saturn", "dreamcast": "dreamcast", "psp": "psp", "a2600": "atari2600",
+            "a5200": "atari5200", "a7800": "atari7800", "lynx": "lynx", "jaguar": "jaguar", "atarist": "atarist",
+            "amiga": "amiga500", "arcade": "fbneo", "mame": "mame", "neogeo": "neogeo", "neocd": "neogeocd",
+            "ngp": "ngp", "ngpc": "ngpc"}
+
+
+def export_folder(cid, style):
+    return BATOCERA.get(cid, cid) if style == "batocera" else BY_ID[cid].name
+
+
+def export_games(games, dest: Path, style="retrostation", include_bios=True, progress=None):
+    """Copie les jeux (avec leurs pistes / disques) rangés par console. Renvoie (copiés, ignorés, erreurs)."""
+    dest = Path(dest)
+    roms_root = dest / "roms" if style == "batocera" else dest / "Jeux"
+    jobs = []
+    for g in games:
+        folder = roms_root / export_folder(g.console, style)
+        base = g.path.parent
+        for f in [g.path] + companions(g.path):
+            try:
+                rel = f.relative_to(base)
+            except ValueError:
+                rel = Path(f.name)
+            jobs.append((f, folder / rel))
+        if g.console == "neogeo" or g.console == "arcade":
+            nb = console_dir("neogeo") / "neogeo.zip"
+            if nb.exists():
+                jobs.append((nb, folder / "neogeo.zip"))
+    if include_bios and paths.BIOS.exists():
+        bios_root = dest / ("bios" if style == "batocera" else "BIOS")
+        for f in paths.BIOS.rglob("*"):
+            if f.is_file() and not f.name.startswith("."):
+                jobs.append((f, bios_root / f.relative_to(paths.BIOS)))
+    copied, skipped, errors, seen = 0, 0, [], set()
+    for i, (src, dst) in enumerate(jobs):
+        if dst in seen:
+            continue
+        seen.add(dst)
+        if progress:
+            progress(i, len(jobs), src.name)
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists() and dst.stat().st_size == src.stat().st_size:
+                skipped += 1
+                continue
+            shutil.copy2(src, dst)
+            copied += 1
+        except OSError as e:
+            errors.append(f"{src.name} : {e}")
+    if progress:
+        progress(len(jobs), len(jobs), "")
+    return copied, skipped, errors

@@ -102,6 +102,23 @@ def status():
     }
 
 
+def mame_version():
+    """Version de MAME du cœur installé (les jeux doivent correspondre à cette version)."""
+    import re as _re
+    cands = [CORES_DIR / "mame_libretro.info", RA_DIR / "info" / "mame_libretro.info"]
+    ra = retroarch_exe()
+    if ra and paths.IS_MAC:
+        cands.append(ra.parent.parent / "Resources" / "info" / "mame_libretro.info")
+    for f in cands:
+        try:
+            m = _re.search(r'display_version\s*=\s*"?v?([0-9.]+)', f.read_text(errors="ignore"))
+            if m:
+                return m.group(1)
+        except OSError:
+            continue
+    return ""
+
+
 def everything_installed():
     s = status()
     return s["retroarch"] and s["dolphin"] and s["shaders"] and s["ppsspp"] and all(s["cores"].values())

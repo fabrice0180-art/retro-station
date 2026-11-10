@@ -75,6 +75,18 @@ de FinalBurn Neo (téléchargée une fois). Les jeux doivent être au format
 FinalBurn Neo ; certains jeux « clones » ont besoin du jeu « parent » à côté
 (par exemple sf2ua.zip a besoin de sf2.zip).
 
+2 quinquies. MAME ET EXPORT VERS UNE AUTRE MACHINE
+-----------------------------------------------
+Arcade (MAME) : les bornes que FinalBurn Neo ne connaît pas sont rangées dans
+« Arcade (MAME) » et lancées avec MAME. Tes jeux MAME doivent correspondre à la
+version de MAME indiquée dans Paramètres > « État des BIOS ». Le moteur MAME est
+gros (plusieurs centaines de Mo, téléchargé une fois).
+Bouton « Exporter » (ou clic droit sur une console) : copie tes jeux, rangés par
+console, dans le dossier de ton choix (disque externe, clé USB, carte SD…).
+Noms des dossiers au choix : Rétro Station, ou Batocera / Recalbox / Knulli
+(dossiers « roms/snes », « roms/megadrive »… et « bios »). Les pistes des CD
+suivent leur jeu ; rien n'est retiré de Rétro Station.
+
 3. BIOS
 -------
 Certaines consoles ont besoin du BIOS de ta propre console :
