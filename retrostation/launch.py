@@ -109,6 +109,11 @@ def write_core_options(cid, disp) -> Path:
             if "=" in ln:
                 k, v = ln.split("=", 1)
                 lines[k.strip()] = v.strip()
+    if cid == "amiga":
+        # sans Kickstart dans le dossier BIOS : on choisit directement le Kickstart libre (AROS),
+        # ce qui évite le message « Kickstart ROM not found » à chaque lancement
+        have_kick = any(f.name.lower().startswith(("kick", "amiga-os-")) for f in paths.BIOS.glob("*"))
+        lines["puae_kickstart"] = '"auto"' if have_kick else '"aros"'
     if cid in RES3D_OPTIONS:
         f = max(1, min(6, int(disp.get("dolphin_res", 4))))
         for k, v in RES3D_OPTIONS[cid](f).items():
