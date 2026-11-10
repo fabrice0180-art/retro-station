@@ -139,7 +139,11 @@ def screen_rect(cid, pct, W, H):
     return int((W - w) / 2), int((H - h) / 2), int(w), int(h)
 
 
-def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None, core_opts=None) -> Path:
+NO_AUTOSTATE = {"amiga", "atarist"}   # ordinateurs à disquettes : la reprise auto peut figer le démarrage
+
+
+def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None, core_opts=None,
+                        autostate=True) -> Path:
     """bezel = (fichier .cfg du contour, (x, y, w, h) du trou) ou None."""
     paths.ENGINES.mkdir(parents=True, exist_ok=True)
     cfg = paths.ENGINES / "retrostation.cfg"
@@ -153,8 +157,8 @@ def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None
         "savefile_directory": str(paths.SAVES / "parties"),
         "savestate_directory": str(paths.SAVES / "etats"),
         "screenshot_directory": str(paths.SAVES / "captures"),
-        "savestate_auto_save": "true",              # reprendre là où on s'était arrêté
-        "savestate_auto_load": "true",
+        "savestate_auto_save": "true" if autostate else "false",   # reprendre là où on s'était arrêté
+        "savestate_auto_load": "true" if autostate else "false",
         "input_autodetect_enable": "true",          # manettes reconnues automatiquement
         "input_menu_toggle_gamepad_combo": "4",     # Select + Start = menu (commandes, sauvegardes, quitter)
         "input_quit_gamepad_combo": "0",
@@ -428,7 +432,8 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     if not bezel and disp.get("fullscreen", True) and int(disp.get("screen_size", 100)) < 100:
         viewport = screen_rect(game.console, int(disp["screen_size"]), int(screen[0]), int(screen[1]))
     core_opts = write_core_options(game.console, disp)
-    cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True), viewport, core_opts)
+    cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True), viewport, core_opts,
+                              autostate=game.console not in NO_AUTOSTATE)
     prepared = prepare_floppy_game(game)
     if prepared:
         rom = str(prepared)
@@ -446,3 +451,20 @@ def dolphin_setup_command():
         raise LaunchError("Dolphin (moteur GameCube / Wii) n'est pas encore installé.")
     DOLPHIN_USER.mkdir(parents=True, exist_ok=True)
     return str(exe), ["-u", str(DOLPHIN_USER)], str(exe.parent)
+
+
+def forget_resume(game) -> int:
+    """Efface la reprise automatique d'un jeu (il redémarrera depuis le début). Renvoie le nombre de fichiers."""
+    from .library import DISK_TAG
+    stems = {game.path.stem, DISK_TAG.sub("", game.path.stem)}
+    n = 0
+    root = paths.SAVES / "etats"
+    if root.exists():
+        for f in root.rglob("*.state.auto*"):
+            if f.name.split(".state.auto")[0] in stems:
+                try:
+                    f.unlink()
+                    n += 1
+                except OSError:
+                    pass
+    return n

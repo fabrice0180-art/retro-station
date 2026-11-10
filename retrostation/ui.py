@@ -1727,10 +1727,16 @@ class MainWindow(QMainWindow):
         m.addAction(f"🖥  Affichage {BY_ID[g.console].name} (taille, contour…)",
                     lambda: DisplayDialog(self, g.console).exec())
         m.addAction("🎮  Régler les commandes…", lambda: self._controls_for(g.console))
+        m.addAction("⏮  Recommencer depuis le début (oublier la reprise)", lambda: self._forget_resume(g))
         m.addAction("📂  Afficher le fichier", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(g.path.parent))))
         m.addSeparator()
         m.addAction("🗑  Supprimer de la bibliothèque", lambda: self._delete(g))
         m.exec(self.grid.viewport().mapToGlobal(pos))
+
+    def _forget_resume(self, g):
+        n = launch.forget_resume(g)
+        QMessageBox.information(self, "Reprise", f"« {g.title} » redémarrera depuis le début."
+                                if n else f"« {g.title} » n'avait pas de reprise enregistrée.")
 
     def _fav(self, g):
         self.lib.toggle_favorite(g)
