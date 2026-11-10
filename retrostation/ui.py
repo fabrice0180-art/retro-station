@@ -6,6 +6,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtCore import (Qt, QSize, QTimer, QObject, Signal, QRunnable, QThreadPool, QAbstractListModel,
@@ -260,6 +261,7 @@ def build_tile(game, cover) -> QImage:
     return out
 
 
+@lru_cache(maxsize=None)
 def first_letter(title: str) -> str:
     """Lettre de classement : « The Legend… » et « Le Roi… » sont rangés à L / R ; chiffres = « # »."""
     import unicodedata
