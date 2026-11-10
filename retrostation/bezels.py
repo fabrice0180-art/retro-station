@@ -63,7 +63,7 @@ COLORS = {
     "neon": {"Rose": "#ff3fa8", "Bleu": "#2fd2ff", "Vert": "#3dff8a", "Orange": "#ff8a3d", "Violet": "#b05cff"},
 }
 # proportions de l'image de chaque console (largeur / hauteur)
-ASPECT = {"gb": 10 / 9, "gbc": 10 / 9, "gg": 10 / 9, "gba": 3 / 2, "ngp": 20 / 19, "ngpc": 20 / 19, "psp": 480 / 272}
+ASPECT = {"gb": 10 / 9, "gbc": 10 / 9, "gg": 10 / 9, "gba": 3 / 2, "ngp": 20 / 19, "ngpc": 20 / 19, "psp": 480 / 272, "lynx": 160 / 102}
 
 FONT_FILES = ["arialbd.ttf", "Arial Bold.ttf", "DejaVuSans-Bold.ttf", "Helvetica.ttc",
               "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/System/Library/Fonts/Helvetica.ttc",

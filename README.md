@@ -3,7 +3,8 @@
 Émulateur multi-consoles pour **Windows** et **Mac** (Intel et puce M) :
 NES, Super Nintendo, Game Boy / Color / Advance, Nintendo 64, GameCube, Wii,
 Master System, Mega Drive, Game Gear, Mega-CD, 32X, Saturn, Dreamcast,
-Neo Geo, Neo Geo CD, Neo Geo Pocket / Color, PSP.
+Neo Geo, Neo Geo CD, Neo Geo Pocket / Color, PSP,
+Atari 2600 / 5200 / 7800 / Lynx / Jaguar / ST, Amiga.
 
 ## Télécharger
 Onglet **Releases** (à droite) :

@@ -43,6 +43,13 @@ PHOTOS = {
     "ngpc": (["Neo-Geo-Pocket-Color-Blue-Left.jpg", "Neo-Geo-Pocket-Color-Blue.jpg"],
              "Neo Geo Pocket Color Evan-Amos"),
     "psp": (["Psp-1000.jpg", "PSP-1000.jpg", "Sony-PSP-1000-Body.png"], "PlayStation Portable PSP-1000 Evan-Amos"),
+    "a2600": (["Atari-2600-Wood-4Sw-Set.jpg", "Atari-2600-Wood-4Sw-Set.png"], "Atari 2600 console set Evan-Amos"),
+    "a5200": (["Atari-5200-4-Port-wController-L.jpg", "Atari-5200-Console-Set.jpg"], "Atari 5200 console Evan-Amos"),
+    "a7800": (["Atari-7800-Console-Set.jpg", "Atari-7800-Console-Set.png"], "Atari 7800 console set Evan-Amos"),
+    "lynx": (["Atari-Lynx-I-Handheld.jpg", "Atari-Lynx-II-Handheld-Angled.jpg"], "Atari Lynx handheld Evan-Amos"),
+    "jaguar": (["Atari-Jaguar-Console-Set.jpg", "Atari-Jaguar-Console-Set.png"], "Atari Jaguar console set Evan-Amos"),
+    "atarist": (["Atari 1040STf.jpg", "Atari-1040STf.jpg"], "Atari 1040ST computer"),
+    "amiga": (["Amiga500 system.jpg", "Amiga 500 system.jpg"], "Commodore Amiga 500 computer"),
 }
 
 IMG_MAGIC = (b"\x89PNG", b"\xff\xd8\xff")

@@ -58,6 +58,10 @@ def _snes_header_ok(data, base):
 
 def sniff_cart_bytes(h: bytes, size: int, read_at=None):
     """Identifie une cartouche à partir de ses premiers octets."""
+    if h[1:10] == b"ATARI7800":
+        return "a7800"
+    if h[:4] == b"LYNX":
+        return "lynx"
     if h[:4] == b"NES\x1a" or h[:4] == b"FDS\x1a":
         return "nes"
     if h[:4] in (b"\x80\x37\x12\x40", b"\x37\x80\x40\x12", b"\x40\x12\x37\x80"):
@@ -242,6 +246,13 @@ def detect(path: Path) -> Detection:
         c = sniff_disc(path)
     elif ext == ".bin":
         c = sniff_cart(path) or sniff_disc(path)
+        if not c:   # petite cartouche .bin : très probablement Atari (2600 en premier)
+            try:
+                small = path.stat().st_size <= 65536
+            except OSError:
+                small = False
+            if small:
+                return Detection("unknown", candidates=("a2600", "a7800", "a5200", "md"))
     elif ext == ".cue":
         tracks = cue_files(path)
         if tracks and tracks[0].exists():
@@ -255,6 +266,8 @@ def detect(path: Path) -> Detection:
                 return Detection("unknown", candidates=sub.candidates or tuple(ids))
     if c and (c in ids or ext in (".bin", ".iso")):
         return Detection("game", c)
+    if ext == ".ipf" and not c:
+        ids = ["amiga", "atarist"]
     if ext == ".gcz" and not c:
         ids = ["gc", "wii"]
     return Detection("unknown", candidates=tuple(ids))

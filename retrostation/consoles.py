@@ -76,6 +76,30 @@ CONSOLES = [
     # ---------------- Sony ----------------
     Console("psp", "PSP", "Sony", "PSP", "#1f2a44", "handheld", "retroarch", "ppsspp",
             (".iso", ".cso", ".pbp", ".chd"), thumbs="Sony - PlayStation Portable"),
+    # ---------------- Atari ----------------
+    Console("a2600", "Atari 2600", "Atari", "2600", "#8a5a2b", "home", "retroarch", "stella",
+            (".a26", ".bin", ".zip"), thumbs="Atari - 2600"),
+    Console("a5200", "Atari 5200", "Atari", "5200", "#3b3b44", "home", "retroarch", "a5200",
+            (".a52", ".bin", ".zip"), thumbs="Atari - 5200",
+            bios_required=(("5200.rom",),), bios_note="5200.rom (indispensable)"),
+    Console("a7800", "Atari 7800", "Atari", "7800", "#b0252f", "home", "retroarch", "prosystem",
+            (".a78", ".bin", ".zip"), thumbs="Atari - 7800",
+            bios_optional=("7800 BIOS (U).rom", "7800 BIOS (E).rom"), bios_note="7800 BIOS (U).rom (facultatif)"),
+    Console("lynx", "Atari Lynx", "Atari", "LYNX", "#d0612a", "handheld", "retroarch", "handy",
+            (".lnx", ".o", ".zip"), thumbs="Atari - Lynx",
+            bios_required=(("lynxboot.img",),), bios_note="lynxboot.img (indispensable)"),
+    Console("jaguar", "Atari Jaguar", "Atari", "JAG", "#1d1d22", "home", "retroarch", "virtualjaguar",
+            (".j64", ".jag", ".abs", ".cof", ".zip"), thumbs="Atari - Jaguar"),
+    Console("atarist", "Atari ST", "Atari", "ST", "#7d8794", "computer", "retroarch", "hatari",
+            (".st", ".msa", ".stx", ".dim", ".ipf", ".zip"), thumbs="Atari - ST",
+            bios_required=(("tos.img",),), bios_note="tos.img (le TOS de ton Atari ST, indispensable)"),
+    # ---------------- Commodore ----------------
+    Console("amiga", "Amiga", "Commodore", "AMIGA", "#c8432f", "computer", "retroarch", "puae",
+            (".adf", ".adz", ".dms", ".fdi", ".ipf", ".hdf", ".hdz", ".lha", ".uae", ".m3u", ".zip"),
+            thumbs="Commodore - Amiga",
+            bios_optional=("kick34005.A500", "kick40068.A1200"),
+            bios_note="kick34005.A500 (Kickstart 1.3) et kick40068.A1200 (3.1) conseillés ; "
+                      "sans eux, un Kickstart libre intégré est utilisé (moins compatible)"),
     # ---------------- SNK ----------------
     Console("neogeo", "Neo Geo", "SNK", "NEO\nGEO", "#c9a227", "arcade", "retroarch", "fbneo",
             (".zip", ".7z"), thumbs="SNK - Neo Geo",
@@ -97,7 +121,7 @@ CONSOLES = [
 ]
 
 BY_ID = {c.id: c for c in CONSOLES}
-FAMILIES = ["Nintendo", "Sega", "Sony", "SNK"]
+FAMILIES = ["Nintendo", "Sega", "Sony", "Atari", "Commodore", "SNK"]
 
 # Fichiers BIOS reconnus à l'import -> chemin dans le dossier BIOS
 BIOS_FILES = {
@@ -121,6 +145,16 @@ BIOS_FILES = {
     "top-sp1.bin": "neocd/top-sp1.bin",
     "neocd.bin": "neocd/neocd.bin",
     "uni-bioscd.rom": "neocd/uni-bioscd.rom",
+    "5200.rom": "5200.rom",
+    "7800 bios (u).rom": "7800 BIOS (U).rom",
+    "7800 bios (e).rom": "7800 BIOS (E).rom",
+    "lynxboot.img": "lynxboot.img",
+    "tos.img": "tos.img",
+    "kick34005.a500": "kick34005.A500",
+    "kick37175.a500": "kick37175.A500",
+    "kick40063.a600": "kick40063.A600",
+    "kick40068.a1200": "kick40068.A1200",
+    "kick40068.a4000": "kick40068.A4000",
     "000-lo.lo": "neocd/000-lo.lo",
     "ng-lo.rom": "neocd/ng-lo.rom",
 }

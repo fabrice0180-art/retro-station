@@ -4,7 +4,8 @@
 Émulateur multi-consoles pour PC (Windows 10/11) et Mac :
 NES, Super Nintendo, Game Boy / Color / Advance, Nintendo 64, GameCube, Wii,
 Master System, Mega Drive, Game Gear, Mega-CD, 32X, Saturn, Dreamcast,
-Neo Geo, Neo Geo CD, Neo Geo Pocket / Color, PSP.
+Neo Geo, Neo Geo CD, Neo Geo Pocket / Color, PSP,
+Atari 2600 / 5200 / 7800 / Lynx / Jaguar / ST, Amiga.
 
 
 1. INSTALLATION
@@ -73,6 +74,13 @@ Certaines consoles ont besoin du BIOS de ta propre console :
   - Saturn         : mpr-17933.bin ou sega_101.bin
   - Neo Geo CD     : neocd_f.rom (ou neocd_z.rom…) + 000-lo.lo
   - Dreamcast      : dc_boot.bin + dc_flash.bin (recommandés)
+  - Atari 5200     : 5200.rom (indispensable)
+  - Atari Lynx     : lynxboot.img (indispensable)
+  - Atari ST       : tos.img (indispensable)
+  - Amiga          : kick34005.A500 (Kickstart 1.3) et kick40068.A1200 (3.1)
+                     conseillés ; sans eux, un Kickstart libre intégré est utilisé
+Amiga et Atari ST : la souris de l'ordinateur sert de souris de l'Amiga / du ST ;
+  pour taper au clavier dans le jeu, appuie sur Arrêt défil (Scroll Lock).
 Importe-les comme des jeux : ils sont rangés tout seuls au bon endroit.
 Paramètres > « État des BIOS » montre ce qui manque.
 

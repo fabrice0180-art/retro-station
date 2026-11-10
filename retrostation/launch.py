@@ -25,14 +25,14 @@ def missing_bios(cid: str):
 
 
 # ------------------------------------------------------------------ RetroArch
-HANDHELDS = {"gb", "gbc", "gba", "gg", "ngp", "ngpc", "psp"}
+HANDHELDS = {"gb", "gbc", "gba", "gg", "ngp", "ngpc", "psp", "lynx"}
 DISPLAY_DEFAULTS = {"fullscreen": True, "bezel": "none", "bezel_color": "", "bezel_size": 82,
                     "screen_size": 100, "scale": "fit", "smooth": False, "effect": "none", "window": 4,
                     "dolphin_res": 3}
 CONSOLES_3D = {"n64", "psp", "dreamcast"}           # résolution 3D augmentable dans RetroArch
 SMOOTH_DEFAULT = {"n64", "psp", "dreamcast", "saturn"}
 ASPECTS = {"gb": 10 / 9, "gbc": 10 / 9, "gg": 10 / 9, "gba": 3 / 2, "ngp": 20 / 19, "ngpc": 20 / 19,
-           "psp": 480 / 272}
+           "psp": 480 / 272, "lynx": 160 / 102}
 EFFECTS = {"none": "Aucun", "lcd": "Écran LCD (grille de pixels)", "crt": "Télé cathodique (lignes)",
            "smooth": "Lissage intelligent (xBRZ)"}
 SHADER_FILES = {
