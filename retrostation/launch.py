@@ -110,6 +110,11 @@ def write_core_options(cid, disp) -> Path:
                 k, v = ln.split("=", 1)
                 lines[k.strip()] = v.strip()
     if cid == "amiga":
+        try:
+            from .library import collect_kickstarts
+            collect_kickstarts()          # Kickstart rangés par erreur avec les jeux -> BIOS
+        except Exception:
+            pass
         # sans Kickstart dans le dossier BIOS : on choisit directement le Kickstart libre (AROS),
         # ce qui évite le message « Kickstart ROM not found » à chaque lancement
         have_kick = any(f.name.lower().startswith(("kick", "amiga-os-")) for f in paths.BIOS.glob("*"))

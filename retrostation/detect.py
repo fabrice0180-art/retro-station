@@ -233,6 +233,10 @@ def detect(path: Path) -> Detection:
 
     if name in BIOS_FILES:
         return Detection("bios", bios_target=BIOS_FILES[name])
+    if name.startswith("[bios]") and "kickstart" in name:
+        from .library import kickstart_target
+        t = kickstart_target(path.name)
+        return Detection("bios", bios_target="kickzip:" + t) if t else Detection("skip")
     if ext in SKIP_EXTS or name.startswith("."):
         return Detection("skip")
 

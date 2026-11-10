@@ -75,7 +75,8 @@ class Library:
                     hidden.update(os.path.normcase(str(x)) for x in m3u_files(Path(full)))
             for relp, full in files:
                 name = relp.rsplit("/", 1)[-1]
-                if name.lower() == "neogeo.zip" or (hidden and os.path.normcase(full) in hidden):
+                if name.lower() == "neogeo.zip" or name.startswith("[BIOS]") or (
+                        hidden and os.path.normcase(full) in hidden):
                     continue
                 key = f"{c.id}/{relp}"
                 m = self.meta.get(key)
@@ -196,6 +197,9 @@ def execute_import(plan: ImportPlan, move=False, progress=None):
                 rel = Path(extra.name)
             jobs.append((extra, dest_dir / rel, False))
     for src, target in plan.bios:
+        if target.startswith("kickzip:"):
+            install_kickstart(src, target[8:])
+            continue
         jobs.append((src, paths.BIOS / target, False))
         if target == "neogeo.zip":
             jobs.append((src, console_dir("neogeo") / "neogeo.zip", False))
@@ -429,3 +433,63 @@ def export_games(games, dest: Path, style="retrostation", include_bios=True, pro
     if progress:
         progress(len(jobs), len(jobs), "")
     return copied, skipped, errors
+
+
+# ------------------------------------------------------------------ Kickstart rangés avec les jeux
+import re as _re2
+import zipfile as _zip2
+
+KICK_REVS = [  # (révision, modèle obligatoire dans le nom) -> nom attendu par l'émulateur Amiga
+    ("33.180", "a500", "kick33180.A500"), ("34.005", "a500", "kick34005.A500"),
+    ("37.175", "a500 plus", "kick37175.A500"), ("37.350", "a600", "kick37350.A600"),
+    ("40.063", "a600", "kick40063.A600"), ("40.068", "a1200", "kick40068.A1200"),
+    ("40.068", "a4000)", "kick40068.A4000"), ("40.060", "cd32", "kick40060.CD32"),
+]
+
+
+def kickstart_target(name: str):
+    """« [BIOS] Kickstart (…) (v1.3) (Rev 34.005) (A500, A2000).zip » -> « kick34005.A500 »."""
+    low = name.lower()
+    if "kickstart" not in low or "[bios]" not in low or "beta" in low or "proto" in low:
+        return None
+    m = _re2.search(r"rev\s*(\d+\.\d+)", low)
+    if not m:
+        return None
+    rev = m.group(1)
+    for r, model, target in KICK_REVS:
+        if r == rev and model in low:
+            if "ext" in low and "cd32" in low:
+                return target + ".ext"
+            return target
+    return None
+
+
+def install_kickstart(src: Path, target: str) -> bool:
+    dest = paths.BIOS / target
+    if dest.exists():
+        return False
+    paths.BIOS.mkdir(parents=True, exist_ok=True)
+    try:
+        if src.suffix.lower() == ".zip":
+            with _zip2.ZipFile(src) as z:
+                roms = [i for i in z.infolist() if not i.is_dir() and 64 * 1024 <= i.file_size <= 1024 * 1024]
+                if len(roms) != 1:      # Kickstart en deux moitiés (A1200 / A4000) : pas utilisable tel quel
+                    return False
+                dest.write_bytes(z.read(roms[0]))
+        else:
+            shutil.copy2(src, dest)
+        return True
+    except (OSError, _zip2.BadZipFile):
+        return False
+
+
+def collect_kickstarts():
+    """Range dans BIOS les Kickstart trouvés dans le dossier des jeux Amiga. Renvoie le nombre ajouté."""
+    d = console_dir("amiga")
+    n = 0
+    if d.exists():
+        for f in d.iterdir():
+            t = kickstart_target(f.name)
+            if t and install_kickstart(f, t):
+                n += 1
+    return n
