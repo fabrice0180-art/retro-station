@@ -1,5 +1,6 @@
 """Bibliothèque de jeux : rangement par console, import en bloc, favoris."""
 import json
+import re
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -7,6 +8,15 @@ from pathlib import Path
 
 from . import paths, arcadedb
 from .consoles import CONSOLES, BY_ID
+
+FLOPPY = {"amiga", "atarist"}   # jeux en plusieurs disquettes : un seul exemplaire affiché (disquette 1)
+DISK_TAG = re.compile(r"\s*\((?:disk|disc|disquette)\s*(\d+)(?:\s*of\s*\d+)?\)", re.I)
+
+
+def disk_number(name: str) -> int:
+    m = DISK_TAG.search(name)
+    return int(m.group(1)) if m else 0
+
 
 ARCADE = {"arcade", "neogeo"}   # jeux nommés par un nom court (sf2.zip) : vrai titre via la liste FinalBurn Neo
 from .detect import detect, companions, cue_files, gdi_files, m3u_files, clean_title, region_of
@@ -75,6 +85,8 @@ class Library:
                     hidden.update(os.path.normcase(str(x)) for x in m3u_files(Path(full)))
             for relp, full in files:
                 name = relp.rsplit("/", 1)[-1]
+                if c.id in FLOPPY and disk_number(name) > 1:
+                    continue        # disquettes 2, 3… : chargées avec la disquette 1
                 if name.lower() == "neogeo.zip" or name.startswith("[BIOS]") or (
                         hidden and os.path.normcase(full) in hidden):
                     continue

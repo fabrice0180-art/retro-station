@@ -119,6 +119,9 @@ def write_core_options(cid, disp) -> Path:
         # ce qui évite le message « Kickstart ROM not found » à chaque lancement
         have_kick = any(f.name.lower().startswith(("kick", "amiga-os-")) for f in paths.BIOS.glob("*"))
         lines["puae_kickstart"] = '"auto"' if have_kick else '"aros"'
+        # disquette 2 dans le 2e lecteur : beaucoup de jeux la lisent alors tout seuls
+        lines["puae_floppy_multidrive"] = '"enabled"'
+
     if cid in RES3D_OPTIONS:
         f = max(1, min(6, int(disp.get("dolphin_res", 4))))
         for k, v in RES3D_OPTIONS[cid](f).items():
@@ -160,6 +163,9 @@ def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None
         "input_remapping_directory": str(paths.SAVES / "commandes"),
         "remap_save_on_exit": "true",               # les commandes modifiées en jeu sont gardées
         "notification_show_remap_load": "true",
+        # changer de disquette / de disque : F6 = éjecter / insérer, F7 = disquette suivante
+        "input_disk_eject_toggle": "f6", "input_disk_next": "f7", "input_disk_prev": "nul",
+        "input_state_slot_decrease": "nul", "input_state_slot_increase": "nul",
         "pause_nonactive": "false",
         "menu_mouse_enable": "true",
         "menu_pointer_enable": "true",
@@ -326,6 +332,71 @@ def ensure_sharp_windows(exe):
         pass
 
 
+# ------------------------------------------------------------------ jeux en plusieurs disquettes
+FLOPPY_EXTS = (".adf", ".adz", ".dms", ".fdi", ".ipf", ".st", ".msa", ".stx", ".dim")
+
+
+HD_EXTS = (".lha", ".hdf", ".hdz", ".slave")
+
+
+def _zip_images(zf):
+    """Images de disquette (ou de jeu WHDLoad) contenues dans un .zip, dans l'ordre des disquettes."""
+    from .library import disk_number
+    items = [i for i in zf.infolist() if not i.is_dir()]
+    floppies = [i for i in items if i.filename.lower().endswith(FLOPPY_EXTS)]
+    floppies.sort(key=lambda i: (disk_number(Path(i.filename).name) or 0, i.filename.lower()))
+    hd = [i for i in items if i.filename.lower().endswith(HD_EXTS)]
+    return floppies, hd
+
+
+def prepare_floppy_game(game):
+    """Prépare un jeu Amiga / Atari ST pour l'émulateur :
+    - les .zip sont décompressés (l'émulateur lit alors l'image de disquette directement) ;
+    - toutes les disquettes d'un jeu (fichiers « Disk 1 », « Disk 2 »… ou plusieurs images dans un même
+      zip) sont réunies dans une liste .m3u pour pouvoir changer de disquette en cours de partie.
+    Renvoie le fichier à lancer (ou None : on lance le fichier tel quel)."""
+    import hashlib
+    import re
+    import zipfile
+    from .library import DISK_TAG, disk_number
+    if game.console not in ("amiga", "atarist"):
+        return None
+    base = DISK_TAG.sub("", game.path.stem)
+    sources = [(disk_number(game.path.name), game.path)]
+    if disk_number(game.path.name):
+        sources = sorted((disk_number(f.name), f) for f in game.path.parent.iterdir()
+                         if f.suffix.lower() == game.path.suffix.lower() and DISK_TAG.sub("", f.stem) == base)
+    cache = paths.ENGINES / "disquettes" / hashlib.md5(f"{game.console}|{base}".encode("utf-8")).hexdigest()[:10]
+    cache.mkdir(parents=True, exist_ok=True)
+    disks = []          # chemins des images, dans l'ordre
+    for _n, f in sources:
+        if f.suffix.lower() != ".zip":
+            disks.append(f)
+            continue
+        try:
+            with zipfile.ZipFile(f) as z:
+                floppies, hd = _zip_images(z)
+                if not floppies and hd and len(sources) == 1:
+                    out = cache / Path(hd[0].filename).name
+                    if not out.exists() or out.stat().st_size != hd[0].file_size:
+                        out.write_bytes(z.read(hd[0]))
+                    return out                      # jeu WHDLoad : lancé directement
+                for info in floppies:
+                    out = cache / f"{len(disks) + 1:02d}{Path(info.filename).suffix.lower()}"
+                    if not out.exists() or out.stat().st_size != info.file_size:
+                        out.write_bytes(z.read(info))
+                    disks.append(out)
+        except (zipfile.BadZipFile, OSError):
+            continue
+    if not disks:
+        return None
+    if len(disks) == 1:
+        return disks[0]
+    m3u = cache / (re.sub(r'[<>:"/\\|?*]', "_", base) + ".m3u")
+    m3u.write_text("".join(f"{d}|Disquette {i}\n" for i, d in enumerate(disks, 1)), encoding="utf-8")
+    return m3u
+
+
 # ------------------------------------------------------------------ commande
 def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     """Renvoie (programme, arguments, dossier de travail, effet utilisé ?)."""
@@ -358,6 +429,9 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
         viewport = screen_rect(game.console, int(disp["screen_size"]), int(screen[0]), int(screen[1]))
     core_opts = write_core_options(game.console, disp)
     cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True), viewport, core_opts)
+    prepared = prepare_floppy_game(game)
+    if prepared:
+        rom = str(prepared)
     args = ["-L", str(core), rom, "--appendconfig", str(cfg)]
     shader = find_shader(disp.get("effect", "none")) if use_shader else None
     if shader:

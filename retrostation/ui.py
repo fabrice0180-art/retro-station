@@ -545,6 +545,7 @@ DANS LES JEUX (NES, Super Nintendo, Game Boy, N64, Sega, Neo Geo)
   Tes réglages sont gardés automatiquement pour cette console.
 • Clavier par défaut : flèches, X = A, Z = B, S = X, A = Y, Q / W = L / R, Entrée = Start, Maj droite = Select
 • F2 = sauvegarde rapide, F4 = chargement rapide, Espace = accéléré
+• Changer de disquette (Amiga, Atari ST…) : F6 (éjecter), F7 (disquette suivante), F6 (insérer)
 • Quitter : Échap deux fois (ou menu > Quitter)
 • La partie reprend automatiquement là où tu l'avais laissée
 

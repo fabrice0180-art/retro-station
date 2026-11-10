@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  RS_VERSION: "1.10.3"
+  RS_VERSION: "1.11.0"
 
 jobs:
   windows:
