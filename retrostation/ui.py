@@ -1680,7 +1680,9 @@ class MainWindow(QMainWindow):
                                         "  F6 = éjecter la disquette\n"
                                         "  F7 = disquette suivante  /  F5 = précédente\n"
                                         "       (le numéro choisi s'affiche, ex. « Disquette 2 / " + str(n) + " »)\n"
-                                        "  F6 = insérer la disquette choisie\n\n"
+                                        "  F6 = insérer la disquette choisie\n"
+                                        "puis appuie sur le bouton de tir si le jeu le demande.\n\n"
+                                        "Autre méthode : F1 (menu) > Contrôle des disques.\n\n"
                                         "(Ce message ne s'affiche qu'une fois.)")
                 self.settings["disk_tip_seen"] = True
                 save_settings(self.settings)

@@ -119,8 +119,9 @@ def write_core_options(cid, disp) -> Path:
         # ce qui évite le message « Kickstart ROM not found » à chaque lancement
         have_kick = any(f.name.lower().startswith(("kick", "amiga-os-")) for f in paths.BIOS.glob("*"))
         lines["puae_kickstart"] = '"auto"' if have_kick else '"aros"'
-        # disquette 2 dans le 2e lecteur : beaucoup de jeux la lisent alors tout seuls
-        lines["puae_floppy_multidrive"] = '"enabled"'
+        # un seul lecteur (DF0) : les disquettes se changent avec F6 / F7 / F5 (mode « plusieurs lecteurs »
+        # désactivé, il empêchait de changer la disquette du lecteur DF0)
+        lines["puae_floppy_multidrive"] = '"disabled"'
 
     if cid in RES3D_OPTIONS:
         f = max(1, min(6, int(disp.get("dolphin_res", 4))))
@@ -173,6 +174,8 @@ def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None
         "input_desktop_menu_toggle": "nul",
         "input_state_slot_decrease": "nul", "input_state_slot_increase": "nul",
         "video_font_enable": "true", "menu_enable_widgets": "true",
+        "input_auto_game_focus": "0",               # le clavier n'est pas capturé : F5 / F6 / F7 marchent toujours
+        "log_verbosity": "true", "frontend_log_level": "1", "libretro_log_level": "1",
         "pause_nonactive": "false",
         "menu_mouse_enable": "true",
         "menu_pointer_enable": "true",
