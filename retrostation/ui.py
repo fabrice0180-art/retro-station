@@ -1408,20 +1408,25 @@ class MainWindow(QMainWindow):
             self.cover_pool.submit(job, g)
 
     def fetch_arcade_names(self):
-        from . import arcadedb
-        if arcadedb.ready():
+        from . import arcadedb, mamedb
+        want_mame = not mamedb.ready() and any(g.console == "mame" for g in self.lib.games)
+        if arcadedb.ready() and not want_mame:
             return
         sig = self.arcade_signals = Signals()
         sig.done.connect(lambda ok: ok and self._arcade_ready())
 
         def job():
-            sig.done.emit(arcadedb.download())
+            ok = arcadedb.download()
+            if want_mame:
+                ok = mamedb.download() or ok
+            sig.done.emit(ok)
         self.cover_pool.submit(job)
 
     def _arcade_ready(self):
-        if any(g.console in ("arcade", "neogeo") for g in self.lib.games):
+        arc = ("arcade", "neogeo", "mame")
+        if any(g.console in arc for g in self.lib.games):
             for g in self.lib.games:
-                if g.console in ("arcade", "neogeo"):
+                if g.console in arc:
                     try:
                         covers.cover_file(g).with_suffix(".absent").unlink()
                     except OSError:
@@ -1552,6 +1557,14 @@ class MainWindow(QMainWindow):
             if ok and not choice.startswith("—"):
                 cid = next(c.id for c in CONSOLES if c.name == choice)
                 plan.games += [(f, cid) for f in grp["files"]]
+        if plan.unnamed_arcade:
+            QMessageBox.information(
+                self, "Jeux d'arcade décompressés",
+                "Ces dossiers contiennent les puces d'une borne d'arcade décompressée, mais le nom du jeu "
+                "ne peut pas être deviné :\n\n" + "\n".join(plan.unnamed_arcade[:6]) +
+                "\n\nLes jeux d'arcade doivent rester en .zip, au nom exact du jeu (ex. daytona.zip). "
+                "Renomme le dossier avec le nom du jeu, puis importe-le à nouveau : il sera remis en .zip "
+                "tout seul.")
         if not plan.games and not plan.bios:
             QMessageBox.information(self, "Import", "Aucun jeu reconnu dans cette sélection.")
             return
@@ -1582,6 +1595,9 @@ class MainWindow(QMainWindow):
             per[BY_ID[cid].name] = per.get(BY_ID[cid].name, 0) + 1
         lines = [f"• {name} : {n}" for name, n in sorted(per.items())]
         msg = f"{added} jeu(x) ajouté(s).\n\n" + "\n".join(lines)
+        if plan.rebuilt:
+            msg += ("\n\nJeux d'arcade décompressés remis en .zip : " + ", ".join(plan.rebuilt[:12])
+                    + ("…" if len(plan.rebuilt) > 12 else ""))
         if plan.bios:
             msg += "\n\nBIOS rangés : " + ", ".join(Path(t).name for _, t in plan.bios)
         if errors:

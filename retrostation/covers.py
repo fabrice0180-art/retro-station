@@ -35,9 +35,9 @@ def best_cover(game):
 
 def _candidates(game):
     stem = game.path.stem
-    if game.console in ("arcade", "neogeo"):
-        from . import arcadedb
-        full = arcadedb.title(stem)
+    if game.console in ("arcade", "neogeo", "mame"):
+        from .library import arcade_title
+        full = arcade_title(game.console, stem)
         if not full:
             return []
         return [_safe(full)]

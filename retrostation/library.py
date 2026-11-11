@@ -95,8 +95,8 @@ class Library:
                 stem = os.path.splitext(name)[0]
                 title = (m or {}).get("title")
                 region = region_of(stem)
-                if not title and c.id in ARCADE:
-                    long_name = arcadedb.title(stem)
+                if not title and (c.id in ARCADE or c.id == "mame"):
+                    long_name = arcade_title(c.id, stem)
                     if long_name:
                         title, region = clean_title(long_name), region_of(long_name)
                 games.append(Game(c.id, Path(full), title or clean_title(stem), region, key))
@@ -143,6 +143,8 @@ class ImportPlan:
     bios: list = field(default_factory=list)       # (source, cible relative)
     unknown: dict = field(default_factory=dict)    # extension -> {"files": [...], "candidates": (...)}
     skipped: int = 0
+    rebuilt: list = field(default_factory=list)          # jeux d'arcade décompressés remis en .zip
+    unnamed_arcade: list = field(default_factory=list)   # dossiers de puces dont le nom du jeu est inconnu
 
 
 def expand(selection):
@@ -153,8 +155,105 @@ def expand(selection):
             yield p
 
 
+# ------------------------------------------------------------------ jeux d'arcade décompressés
+# Un jeu d'arcade (MAME, FinalBurn Neo) est un .zip qui contient les puces de la borne
+# (epr-14869.25, mpr-16491.32…). S'il a été décompressé, on refait le .zip tout seul.
+STAGING = paths.ENGINES / "import-arcade"
+_GENERIC_DIRS = {"roms", "rom", "mame", "arcade", "jeux", "games", "game", "downloads", "download",
+                 "téléchargements", "telechargements", "bureau", "desktop", "documents", "nouveau dossier",
+                 "new folder", "fbneo", "fba", "retrostation"}
+_SET_NAME = re.compile(r"^[a-z0-9_]{2,20}$")
+
+
+def _known_exts():
+    from .consoles import CONSOLES as _C
+    ex = set()
+    for c in _C:
+        ex.update(c.exts)
+    return ex - {".bin", ".rom"}
+
+
+def _chip_dir(d: Path):
+    """Fichiers de puces d'une borne présents directement dans d (ou None)."""
+    try:
+        files = [f for f in d.iterdir() if f.is_file() and not f.name.startswith(".")]
+    except OSError:
+        return None
+    if len(files) < 2:
+        return None
+    known = _known_exts()
+    chips, odd = [], 0
+    for f in files:
+        try:
+            n = f.stat().st_size
+        except OSError:
+            return None
+        ext = f.suffix.lower()
+        if ext in known or n > 256 << 20:
+            return None                      # un vrai jeu (ou une archive) : ce n'est pas un jeu décompressé
+        if n >= 256 and n & (n - 1) == 0:    # les puces ont une taille en puissance de 2
+            chips.append(f)
+        if ext not in (".bin", ".rom"):
+            odd += 1                         # .25, .ic12, .u1… : extensions typiques des puces
+    if len(chips) < 0.7 * len(files) or odd * 2 < len(files):
+        return None
+    return files
+
+
+def _common_prefix(names):
+    pre = names[0]
+    for n in names[1:]:
+        while not n.startswith(pre):
+            pre = pre[:-1]
+    return pre
+
+
+def find_loose_arcade(selection):
+    """Repère les jeux d'arcade décompressés. Renvoie (jeux, fichiers_concernés, non_nommés) ;
+    jeux = [(nom_du_set, [fichiers], dossier)]."""
+    dirs = []
+    for p in map(Path, selection):
+        if p.is_dir():
+            dirs.append(p)
+            dirs.extend(x for x in sorted(p.rglob("*")) if x.is_dir())
+    chip = {d: f for d in dirs if (f := _chip_dir(d))}
+    sets, used, unnamed = [], set(), []
+    for d, files in chip.items():
+        kids = [k for k in chip if k.parent == d]
+        own = d.name.lower()
+        name = None
+        if kids:                              # jeu « fusionné » : le jeu principal + ses variantes en sous-dossiers
+            pre = _common_prefix([k.name.lower() for k in kids])
+            if _SET_NAME.match(own) and own not in _GENERIC_DIRS and all(k.name.lower().startswith(own) for k in kids):
+                name = own
+            elif len(pre) >= 3 and _SET_NAME.match(pre):
+                name = pre
+        if not name and d.parent in chip:     # variante : son nom de dossier est le nom du jeu
+            name = own if _SET_NAME.match(own) else None
+        if not name and _SET_NAME.match(own) and own not in _GENERIC_DIRS:
+            name = own
+        if not name:
+            unnamed.append(d)
+            continue
+        sets.append((name, files, d))
+        used.update(f.resolve() for f in files)
+    return sets, used, unnamed
+
+
+def build_arcade_zip(name: str, files) -> Path:
+    import zipfile
+    STAGING.mkdir(parents=True, exist_ok=True)
+    out = STAGING / f"{name}.zip"
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        for f in sorted(files, key=lambda x: x.name.lower()):
+            z.write(f, f.name.lower())
+    return out
+
+
 def plan_import(selection) -> ImportPlan:
-    files = list(expand(selection))
+    shutil.rmtree(STAGING, ignore_errors=True)
+    loose, used, unnamed = find_loose_arcade(selection)
+    files = [f for f in expand(selection) if f.resolve() not in used]
     # pistes déjà référencées par un .cue / .gdi / .m3u : elles suivront leur fichier principal
     referenced = set()
     for f in files:
@@ -168,6 +267,15 @@ def plan_import(selection) -> ImportPlan:
             for sub in m3u_files(f):
                 referenced.update(x.resolve() for x in companions(sub))
     plan = ImportPlan()
+    for name, chips, _d in loose:
+        try:
+            z = build_arcade_zip(name, chips)
+        except OSError:
+            plan.skipped += len(chips)
+            continue
+        plan.games.append((z, arcadedb.console_of(name) or "mame"))
+        plan.rebuilt.append(name)
+    plan.unnamed_arcade = [str(d) for d in unnamed]
     for f in files:
         if f.resolve() in referenced:
             continue
@@ -233,6 +341,7 @@ def execute_import(plan: ImportPlan, move=False, progress=None):
             errors.append(f"{src.name} : {e}")
     if progress:
         progress(len(jobs), len(jobs), "")
+    shutil.rmtree(STAGING, ignore_errors=True)
     return added, errors
 
 
@@ -263,10 +372,18 @@ def _norm_title(stem):
     return _re.sub(r"[^a-z0-9]+", "", t) + (f"#d{disc.group(1)}" if disc else "")
 
 
+def arcade_title(cid: str, stem: str):
+    """Nom complet d'un jeu d'arcade d'après son nom court (sf2, daytona…), ou None."""
+    if cid == "mame":
+        from . import mamedb
+        return mamedb.title(stem) or arcadedb.title(stem)
+    if cid in ARCADE:
+        return arcadedb.title(stem)
+    return None
+
+
 def _name_of(game):
-    if game.console in ARCADE:
-        return arcadedb.title(game.path.stem) or game.path.stem
-    return game.path.stem
+    return arcade_title(game.console, game.path.stem) or game.path.stem
 
 
 def _preference(game):

@@ -50,6 +50,9 @@ PHOTOS = {
     "jaguar": (["Atari-Jaguar-Console-Set.jpg", "Atari-Jaguar-Console-Set.png"], "Atari Jaguar console set Evan-Amos"),
     "atarist": (["Atari 1040STf.jpg", "Atari-1040STf.jpg"], "Atari 1040ST computer"),
     "amiga": (["Amiga500 system.jpg", "Amiga 500 system.jpg"], "Commodore Amiga 500 computer"),
+    # bornes d'arcade : vraies photos de bornes (Commons, licence libre)
+    "arcade": (["Japanese shmup arcade.jpg", "Sega Astro City.jpg"], "Sega Astro City arcade cabinet"),
+    "mame": (["ArcadeGames.jpg", "Arcade games.jpg"], "upright arcade cabinets arcade"),
 }
 
 IMG_MAGIC = (b"\x89PNG", b"\xff\xd8\xff")
