@@ -167,9 +167,12 @@ def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None
         "input_remapping_directory": str(paths.SAVES / "commandes"),
         "remap_save_on_exit": "true",               # les commandes modifiées en jeu sont gardées
         "notification_show_remap_load": "true",
-        # changer de disquette / de disque : F6 = éjecter / insérer, F7 = disquette suivante
-        "input_disk_eject_toggle": "f6", "input_disk_next": "f7", "input_disk_prev": "nul",
+        # changer de disquette / de disque : F6 = éjecter / insérer, F7 = suivante, F5 = précédente
+        # (le numéro choisi s'affiche à l'écran : « Disquette 2 / 2 »)
+        "input_disk_eject_toggle": "f6", "input_disk_next": "f7", "input_disk_prev": "f5",
+        "input_desktop_menu_toggle": "nul",
         "input_state_slot_decrease": "nul", "input_state_slot_increase": "nul",
+        "video_font_enable": "true", "menu_enable_widgets": "true",
         "pause_nonactive": "false",
         "menu_mouse_enable": "true",
         "menu_pointer_enable": "true",
@@ -397,7 +400,8 @@ def prepare_floppy_game(game):
     if len(disks) == 1:
         return disks[0]
     m3u = cache / (re.sub(r'[<>:"/\\|?*]', "_", base) + ".m3u")
-    m3u.write_text("".join(f"{d}|Disquette {i}\n" for i, d in enumerate(disks, 1)), encoding="utf-8")
+    total = len(disks)
+    m3u.write_text("".join(f"{d}|Disquette {i} / {total}\n" for i, d in enumerate(disks, 1)), encoding="utf-8")
     return m3u
 
 

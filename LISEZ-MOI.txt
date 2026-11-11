@@ -101,8 +101,8 @@ Certaines consoles ont besoin du BIOS de ta propre console :
   - Amiga          : kick34005.A500 (Kickstart 1.3) et kick40068.A1200 (3.1)
                      conseillés ; sans eux, un Kickstart libre intégré est utilisé
 Amiga et Atari ST : les jeux en plusieurs disquettes n'apparaissent qu'une fois ; toutes
-  les disquettes sont chargées. Quand le jeu demande la disquette 2 : F6 (éjecter),
-  F7 (disquette suivante), F6 (insérer). Beaucoup de jeux la trouvent aussi tout seuls.
+  les disquettes sont chargées. Quand le jeu demande une autre disquette : F6 (éjecter),
+  F7 / F5 (disquette suivante / précédente : « Disquette 2 / 3 » s'affiche), F6 (insérer).
 Amiga et Atari ST : la souris de l'ordinateur sert de souris de l'Amiga / du ST ;
   pour taper au clavier dans le jeu, appuie sur Arrêt défil (Scroll Lock).
 Importe-les comme des jeux : ils sont rangés tout seuls au bon endroit.

@@ -545,7 +545,8 @@ DANS LES JEUX (NES, Super Nintendo, Game Boy, N64, Sega, Neo Geo)
   Tes réglages sont gardés automatiquement pour cette console.
 • Clavier par défaut : flèches, X = A, Z = B, S = X, A = Y, Q / W = L / R, Entrée = Start, Maj droite = Select
 • F2 = sauvegarde rapide, F4 = chargement rapide, Espace = accéléré
-• Changer de disquette (Amiga, Atari ST…) : F6 (éjecter), F7 (disquette suivante), F6 (insérer)
+• Changer de disquette (Amiga, Atari ST…) : F6 = éjecter, puis F7 / F5 = disquette suivante / précédente
+  (le numéro s'affiche à l'écran, ex. « Disquette 2 / 3 »), puis F6 = insérer
 • Quitter : Échap deux fois (ou menu > Quitter)
 • La partie reprend automatiquement là où tu l'avais laissée
 
@@ -1667,6 +1668,22 @@ class MainWindow(QMainWindow):
             if r == QMessageBox.StandardButton.Yes:
                 EngineDialog(self).exec()
             return
+        if exe and args and args[2].lower().endswith(".m3u"):
+            try:
+                n = sum(1 for ln in Path(args[2]).read_text(encoding="utf-8").splitlines() if ln.strip())
+            except OSError:
+                n = 0
+            if n > 1 and not self.settings.get("disk_tip_seen"):
+                QMessageBox.information(self, "Jeu en plusieurs disquettes",
+                                        f"« {game.title} » tient sur {n} disquettes.\n\n"
+                                        "Quand le jeu demande une autre disquette :\n"
+                                        "  F6 = éjecter la disquette\n"
+                                        "  F7 = disquette suivante  /  F5 = précédente\n"
+                                        "       (le numéro choisi s'affiche, ex. « Disquette 2 / " + str(n) + " »)\n"
+                                        "  F6 = insérer la disquette choisie\n\n"
+                                        "(Ce message ne s'affiche qu'une fois.)")
+                self.settings["disk_tip_seen"] = True
+                save_settings(self.settings)
         self.proc = QProcess(self)
         self.proc.setProgram(exe)
         self.proc.setArguments(args)
