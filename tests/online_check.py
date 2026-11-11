@@ -11,7 +11,7 @@ from retrostation import mamedb, photos, romcheck, arcadedb  # noqa: E402
 ok = mamedb.download()
 for line in mamedb._log:
     print(f"::notice::MAME source {line}")
-for n in ("daytona", "daytona93", "daytonas", "sf2", "pacman", "outrun"):
+for n in ("daytona",):
     print(f"::notice::MAME {n} = {mamedb.title(n)!r} (clone de {(mamedb.info(n) or {}).get('p')!r})")
 for cid in ("arcade", "mame"):
     got = photos.download(cid)

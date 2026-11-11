@@ -236,3 +236,120 @@ def launch_folder(game, used):
         except OSError:
             pass
     return d / game.path.name
+
+
+# ------------------------------------------------------------------ vérification et réparation de toute la collection
+QUARANTINE = paths.ROOT / "Jeux" / "_Arcade incomplets (non jouables)"
+
+
+def ensure_lists():
+    """Télécharge les listes manquantes (FinalBurn Neo, MAME, MAME 2003-Plus)."""
+    from . import arcadedb, mamedb
+    if not ready("fbneo"):
+        arcadedb.download()
+    if not ready("mame"):
+        mamedb.download()
+    if not ready("mame2003_plus"):
+        download_mame2003()
+    return [c for c in CRC_FILES if ready(c)]
+
+
+def _index(zips, progress=None):
+    """Empreinte CRC -> (zip, nom de la puce), pour retrouver une puce rangée dans un autre .zip."""
+    idx = {}
+    for i, z in enumerate(zips):
+        try:
+            with zipfile.ZipFile(z) as zf:
+                for info in zf.infolist():
+                    if not info.is_dir() and info.CRC not in idx:
+                        idx[info.CRC] = (z, info.filename)
+        except (zipfile.BadZipFile, OSError):
+            pass
+        if progress and i % 300 == 0:
+            progress(i / max(len(zips), 1))
+    return idx
+
+
+def _rebuild(game_path: Path, add):
+    """Ajoute au .zip du jeu les puces trouvées ailleurs (add = [(nom_attendu, zip_source, nom_source)])."""
+    tmp = game_path.with_suffix(".reparation.tmp")
+    names = {n.lower() for n, _z, _s in add}
+    with zipfile.ZipFile(game_path) as src, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as out:
+        for info in src.infolist():
+            if info.filename.lower() not in names:      # une puce du même nom mais d'une autre version
+                out.writestr(info, src.read(info.filename))
+        for name, z, inner in add:
+            with zipfile.ZipFile(z) as other:
+                out.writestr(name, other.read(inner))
+    os.replace(tmp, game_path)
+
+
+def repair_all(games, progress=None):
+    """Vérifie tous les jeux d'arcade ; complète ceux dont les puces manquantes existent dans un autre
+    .zip de la collection. Renvoie (réparés [jeux], incomplets [(jeu, raison)], inconnus [jeux])."""
+    arc = [g for g in games if g.console in ARCADE_CONSOLES]
+    zips = list(dict.fromkeys([g.path for g in arc] +
+                              [z for f in folders() if f.exists() for z in f.glob("*.zip")]))
+    idx = _index(zips, (lambda f: progress(f * 0.4)) if progress else None)
+    fixed, bad, unknown, needed_by_ok = [], [], [], set()
+    pending = []
+    for i, g in enumerate(arc):
+        if progress and i % 200 == 0:
+            progress(0.4 + 0.55 * i / max(len(arc), 1))
+        try:
+            _core, used = choose(g)
+            needed_by_ok.update(str(u) for u in used)
+            continue
+        except Incomplete as e:
+            err = e
+        except Exception:
+            continue
+        if not any(check(c, g.path) is not None for c in CRC_FILES):
+            unknown.append(g)
+            continue
+        # puces manquantes présentes ailleurs ? (réparation pour la version la plus proche)
+        db = load(err.best_core) or {}
+        entry = db.get(g.path.stem.lower(), {"r": []})
+        have = set()
+        for n in chain(db, g.path.stem.lower()):
+            z = g.path if n == g.path.stem.lower() else find_zip(n, g.path.parent)
+            if z:
+                have |= zip_crcs(z)
+        add, ok = [], True
+        for crc, nm in entry["r"]:
+            if crc in have:
+                continue
+            src = idx.get(crc)
+            if not src:
+                ok = False
+                break
+            add.append((nm, src[0], src[1]))
+        if ok and add:
+            try:
+                _rebuild(g.path, add)
+                _core, used = choose(g)
+                fixed.append(g)
+                needed_by_ok.update(str(u) for u in used)
+                continue
+            except Exception:
+                pass
+        why = f"{len(err.missing)} puce(s) manquante(s)"
+        if err.needs_zip:
+            why += ", il manque " + ", ".join(err.needs_zip)
+        pending.append((g, why))
+    # un jeu incomplet qui sert de « jeu principal » à un jeu qui marche reste à sa place
+    bad = [(g, why) for g, why in pending if str(g.path) not in needed_by_ok]
+    if progress:
+        progress(1.0)
+    return fixed, bad, unknown
+
+
+def set_aside(game):
+    """Range un jeu d'arcade non jouable à part (récupérable), hors de la bibliothèque."""
+    import shutil
+    dest = QUARANTINE / game.path.parent.name / game.path.name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest.unlink()
+    shutil.move(str(game.path), str(dest))
+    return dest

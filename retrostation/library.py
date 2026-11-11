@@ -529,24 +529,21 @@ def analyze(games, progress=None):
         done += len(gs)
         if progress:
             progress(done / total)
-    # 3) jeux d'arcade qui ne pourront pas démarrer (version ou fichiers manquants)
+    # 3) jeux d'arcade : vérification puce par puce, réparation si possible, sinon proposés au rangement
     try:
         from . import romcheck
-        arc = [g for g in games if g.console in romcheck.ARCADE_CONSOLES]
-        ko = []
-        for i, g in enumerate(arc):
-            try:
-                romcheck.choose(g)
-            except romcheck.Incomplete as e:
-                ko.append((g, f"{len(e.missing)} puce(s) manquante(s)"
-                           + (f", il manque {', '.join(e.needs_zip)}" if e.needs_zip else ""), False))
-            except Exception:
-                pass
-            if progress and i % 200 == 0:
-                progress(min(0.99, i / max(len(arc), 1)))
-        if ko:
-            groups.append({"kind": "arcade", "title": "Jeux d'arcade qui ne pourront pas démarrer",
-                           "console": "", "items": ko})
+        if any(g.console in romcheck.ARCADE_CONSOLES for g in games):
+            if progress:
+                progress(0.0)
+            romcheck.ensure_lists()
+            fixed, ko, _unknown = romcheck.repair_all(games, progress)
+            if fixed:
+                groups.append({"kind": "repares", "title": "Jeux d'arcade réparés", "console": "",
+                               "items": [(g, "complété avec des puces trouvées dans ta collection", False)
+                                         for g in fixed]})
+            if ko:
+                groups.append({"kind": "arcade", "title": "Jeux d'arcade qui ne pourront pas démarrer",
+                               "console": "", "items": [(g, why, True) for g, why in ko]})
     except Exception:
         pass
     # 4) ROMs douteuses

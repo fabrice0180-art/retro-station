@@ -573,7 +573,8 @@ Astuce : « Enregistrer le remappage du jeu » garde des commandes spéciales po
 # ------------------------------------------------------------------ ménage de la bibliothèque
 class CleanupDialog(QDialog):
     KIND = {"identique": "Copies identiques", "versions": "Plusieurs versions du même jeu",
-            "douteuse": "ROMs douteuses", "arcade": "Jeux d'arcade qui ne pourront pas démarrer"}
+            "douteuse": "ROMs douteuses", "arcade": "Jeux d'arcade qui ne pourront pas démarrer",
+            "repares": "Jeux d'arcade réparés (rien à faire)"}
 
     def __init__(self, win):
         super().__init__(win)
@@ -620,8 +621,9 @@ class CleanupDialog(QDialog):
         self.info.setText("Coche ce que tu veux retirer (les propositions sont déjà cochées). "
                           "Les fichiers vont dans la corbeille de ton ordinateur : tu peux les récupérer.")
         self.tree.blockSignals(True)
-        flat = ("douteuse", "arcade")
-        for kind in ("identique", "versions", "arcade", "douteuse"):
+        flat = ("douteuse", "arcade", "repares")
+        self.arcade_keys = {it[0].key for g in groups if g["kind"] == "arcade" for it in g["items"]}
+        for kind in ("repares", "arcade", "identique", "versions", "douteuse"):
             sub = [g for g in groups if g["kind"] == kind]
             if not sub:
                 continue
@@ -636,12 +638,15 @@ class CleanupDialog(QDialog):
                     parent = QTreeWidgetItem([grp["title"], BY_ID[grp["console"]].name, ""])
                     top.addChild(parent)
                 for game, why, remove in grp["items"]:
-                    it = QTreeWidgetItem([game.path.name, BY_ID[game.console].name, why])
-                    it.setData(0, Qt.ItemDataRole.UserRole, game)
-                    it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                    it.setCheckState(0, Qt.CheckState.Checked if remove else Qt.CheckState.Unchecked)
+                    title = game.title if game.title != game.path.stem else game.path.name
+                    it = QTreeWidgetItem([f"{title}  ({game.path.name})" if title != game.path.name else title,
+                                          BY_ID[game.console].name, why])
+                    if kind != "repares":
+                        it.setData(0, Qt.ItemDataRole.UserRole, game)
+                        it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                        it.setCheckState(0, Qt.CheckState.Checked if remove else Qt.CheckState.Unchecked)
                     parent.addChild(it)
-                parent.setExpanded(True)
+                parent.setExpanded(kind not in ("arcade", "repares") or len(grp["items"]) < 60)
             top.setExpanded(True)
         self.tree.blockSignals(False)
         self._update_count()
@@ -667,21 +672,36 @@ class CleanupDialog(QDialog):
 
     def _trash(self):
         games = self._checked()
-        r = QMessageBox.question(self, "Ménage", f"Mettre {len(games)} jeu(x) à la corbeille ?\n"
-                                 "(Tu pourras les récupérer depuis la corbeille.)")
+        keys = getattr(self, "arcade_keys", set())
+        aside = [g for g in games if g.key in keys]
+        trash = [g for g in games if g.key not in keys]
+        q = []
+        if trash:
+            q.append(f"• {len(trash)} fichier(s) à la corbeille (récupérables depuis la corbeille)")
+        if aside:
+            q.append(f"• {len(aside)} jeu(x) d'arcade non jouables rangés à part, dans le dossier\n"
+                     f"   « {romcheck.QUARANTINE.name} » (récupérables, ils ne s'affichent plus)")
+        r = QMessageBox.question(self, "Ménage", "On y va ?\n\n" + "\n".join(q))
         if r != QMessageBox.StandardButton.Yes:
             return
         from PySide6.QtCore import QFile
         from .detect import companions
         failed = 0
-        for g in games:
+        for g in trash:
             for f in [g.path] + companions(g.path):
                 if f.exists() and not QFile.moveToTrash(str(f)):
                     failed += 1
             self.win.lib.meta.pop(g.key, None)
+        for g in aside:
+            try:
+                romcheck.set_aside(g)
+                self.win.lib.meta.pop(g.key, None)
+            except OSError:
+                failed += 1
         self.win.lib.save()
         self.win.refresh()
-        msg = f"{len(games)} jeu(x) mis à la corbeille."
+        msg = (f"{len(trash)} fichier(s) mis à la corbeille." if trash else "") + \
+              (f"\n{len(aside)} jeu(x) d'arcade rangés à part." if aside else "")
         if failed:
             msg += f"\n{failed} fichier(s) n'ont pas pu être déplacés."
         QMessageBox.information(self, "Ménage", msg)
