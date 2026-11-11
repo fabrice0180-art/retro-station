@@ -192,34 +192,107 @@ def companions(path: Path):
 NEOGEO_PART = re.compile(r"(^|[-_.])(p\d|c\d|m\d|s\d|v\d\d?)(\.|$)|\d{3}-[pcmsv]\d", re.I)
 
 
-def sniff_zip(path: Path):
-    arcade_list = False
-    try:
-        from . import arcadedb
-        known = arcadedb.console_of(path.stem)
-        if known:
-            return known, ()
-        arcade_list = arcadedb.ready()
-    except Exception:
-        pass
+def ipf_platform(head: bytes):
+    """Disquette .ipf (SPS / CAPS) : la plateforme est écrite dans l'en-tête. 'amiga', 'atarist' ou None."""
+    if head[:4] != b"CAPS":
+        return None
+    i = head.find(b"INFO")
+    if i < 0 or len(head) < i + 12 + 64:
+        return None
+    import struct
+    plats = struct.unpack(">4I", head[i + 60:i + 76])
+    if 1 in plats:
+        return "amiga"
+    if 2 in plats:
+        return "atarist"
+    return None
+
+
+def sniff_zip_contents(path: Path):
+    """Console d'après les fichiers contenus dans le .zip (sans regarder son nom).
+    Renvoie (console, candidats) ; console None si c'est sans doute un jeu d'arcade."""
     try:
         with zipfile.ZipFile(path) as z:
             names = [n for n in z.namelist() if not n.endswith("/")]
+            ambiguous = []
             for n in names:
                 e = Path(n).suffix.lower()
                 ids = [i for i in EXT_MAP.get(e, []) if i not in ("neogeo",)]
                 if len(ids) == 1:
                     return ids[0], ()
+                if e == ".ipf":
+                    with z.open(n) as f:
+                        c = ipf_platform(f.read(256))
+                    if c:
+                        return c, ()
                 if e == ".bin":
                     with z.open(n) as f:
                         h = f.read(0x8000)
                     c = sniff_cart_bytes(h[:0x200], len(h), lambda o, k: h[o:o + k])
                     if c:
                         return c, ()
+                elif len(ids) > 1:
+                    ambiguous += [i for i in ids if i not in ambiguous]
             if any(NEOGEO_PART.search(Path(n).name) for n in names):
                 return "neogeo", ()
+            if ambiguous:          # disquettes, disques… : ce n'est pas une borne d'arcade
+                return None, tuple(ambiguous)
     except (zipfile.BadZipFile, OSError):
         pass
+    return None, ()
+
+
+# Jeux d'arcade : « daytona (1).zip » (copie renommée par le navigateur) doit redevenir « daytona.zip »
+_DUP_SUFFIX = re.compile(r"\s*\(\d+\)$")
+
+# Fichiers « système » de MAME (BIOS de cartes d'arcade et puces partagées) : ce ne sont pas des jeux,
+# mais les jeux qui en ont besoin ne démarrent pas sans eux (ex. Daytona USA -> model1io.zip).
+MAME_SUPPORT = {
+    "model1io", "model1io2", "segam1audio", "naomi", "naomi2", "naomigd", "awbios",
+    "hikaru", "segasp", "chihiro", "triforce", "lindbergh", "stvbios", "pgm", "pgm2",
+    "cpzn1", "cpzn2", "tps", "coh1000a", "coh1000c", "coh1000t", "coh1000w", "coh1001l", "coh1002e",
+    "coh1002m", "coh1002v", "coh3002c", "coh3002t", "konamigx", "sys246", "sys256", "sys573", "sys10",
+    "taitotz", "taitogn", "taitofx1", "skns", "decocass", "nss", "playch10", "megaplay", "megatech",
+    "isgsm", "atarisy1", "hng64", "airlbios", "aleck64", "crysbios", "galgbios", "ar_bios", "alg_bios",
+    "bubsys", "qsound", "qsound_hle", "kabukiz80", "cps3", "gts1", "macsbios", "sammymdl", "v4bios",
+    "ym2608", "ym2413", "jvs13551",
+}
+
+
+def strip_dup(stem: str) -> str:
+    return _DUP_SUFFIX.sub("", stem).strip() or stem
+
+
+def arcade_stem(stem: str) -> str:
+    return _DUP_SUFFIX.sub("", stem).strip().lower()
+
+
+def mame_support(stem: str) -> bool:
+    st = arcade_stem(stem)
+    if st in MAME_SUPPORT:
+        return True
+    try:
+        from . import mamedb
+        return mamedb.is_support(st)
+    except Exception:
+        return False
+
+
+def sniff_zip(path: Path):
+    arcade_list = False
+    try:
+        from . import arcadedb
+        known = arcadedb.console_of(arcade_stem(path.stem))
+        if known:
+            return known, ()
+        arcade_list = arcadedb.ready()
+    except Exception:
+        pass
+    c, cands = sniff_zip_contents(path)
+    if c:
+        return c, ()
+    if cands:
+        return None, cands
     if arcade_list:     # borne inconnue de FinalBurn Neo : on la confie à MAME
         return "mame", ()
     return None, ("arcade", "mame", "neogeo")
@@ -244,6 +317,8 @@ def detect(path: Path) -> Detection:
     if not ids:
         return Detection("unknown")
 
+    if ext == ".zip" and mame_support(path.stem):
+        return Detection("bios", bios_target="mame:" + arcade_stem(path.stem) + ".zip")
     if ext == ".zip":
         c, cand = sniff_zip(path)
         return Detection("game", c) if c else Detection("unknown", candidates=cand)
@@ -289,6 +364,13 @@ def detect(path: Path) -> Detection:
     if c and (c in ids or ext in (".bin", ".iso")):
         return Detection("game", c)
     if ext == ".ipf" and not c:
+        try:
+            with open(path, "rb") as f:
+                c = ipf_platform(f.read(256))
+        except OSError:
+            c = None
+        if c:
+            return Detection("game", c)
         ids = ["amiga", "atarist"]
     if ext == ".gcz" and not c:
         ids = ["gc", "wii"]

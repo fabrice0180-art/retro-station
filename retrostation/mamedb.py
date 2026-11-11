@@ -11,7 +11,7 @@ import urllib.parse
 
 from . import paths, engines
 
-CACHE = paths.ENGINES / "mame-noms.json"
+CACHE = paths.ENGINES / "mame-noms-2.json"
 API = "https://api.github.com/repos/libretro/libretro-database/contents/{d}"
 DIRS = ("metadat/mame", "metadat/mame-nonmerged", "metadat/mame-split", "metadat/mame-merged", "dat")
 FALLBACKS = ("https://raw.githubusercontent.com/libretro/mame2003-plus-libretro/master/metadata/mame2003-plus.xml",)
@@ -80,6 +80,8 @@ def parse(data: bytes) -> dict:
             c = _XML_CLONE.search(m.group(2))
             name = m.group(1).decode("utf-8", "replace").lower()
             db[name] = {"t": desc or name, "p": c.group(1).decode().lower() if c else ""}
+            if b'isbios="yes"' in m.group(2) or b'isdevice="yes"' in m.group(2):
+                db[name]["b"] = 1
         return db
     blocks = _CMP_GAME.split(data)
     for blk in blocks[1:]:
@@ -118,6 +120,12 @@ def download():
 def info(set_name: str):
     db = _load_cache()
     return db.get(set_name.lower()) if db else None
+
+
+def is_support(set_name: str) -> bool:
+    """BIOS ou puce partagée (pas un jeu)."""
+    i = info(set_name)
+    return bool(i and i.get("b"))
 
 
 def title(set_name: str):

@@ -19,6 +19,7 @@ def disk_number(name: str) -> int:
 
 
 ARCADE = {"arcade", "neogeo"}   # jeux nommés par un nom court (sf2.zip) : vrai titre via la liste FinalBurn Neo
+from .detect import mame_support, strip_dup
 from .detect import detect, companions, cue_files, gdi_files, m3u_files, clean_title, region_of
 
 
@@ -87,6 +88,8 @@ class Library:
                 name = relp.rsplit("/", 1)[-1]
                 if c.id in FLOPPY and disk_number(name) > 1:
                     continue        # disquettes 2, 3… : chargées avec la disquette 1
+                if c.id in ("mame", "arcade") and mame_support(os.path.splitext(name)[0]):
+                    continue        # BIOS de MAME (model1io.zip…) : pas un jeu
                 if name.lower() == "neogeo.zip" or name.startswith("[BIOS]") or (
                         hidden and os.path.normcase(full) in hidden):
                     continue
@@ -250,6 +253,43 @@ def build_arcade_zip(name: str, files) -> Path:
     return out
 
 
+def relocate_misfiled():
+    """Range à la bonne place les .zip mis par erreur avec les bornes d'arcade (ex. des disquettes
+    Amiga .ipf rangées dans « Arcade (MAME) »). Renvoie [(nom, console)]."""
+    from .detect import sniff_zip_contents
+    moved = []
+    for cid in ("mame", "arcade"):
+        d = console_dir(cid)
+        if not d.exists():
+            continue
+        for f in list(d.iterdir()):
+            if f.suffix.lower() != ".zip" or not f.is_file():
+                continue
+            clean = strip_dup(f.stem) + f.suffix
+            if clean != f.name and not (d / clean).exists():
+                try:                           # « model1io (1).zip » -> « model1io.zip »
+                    f = f.rename(d / clean)
+                    moved.append((clean, cid))
+                except OSError:
+                    pass
+            c, _cands = sniff_zip_contents(f)
+            if not c or c in ("mame", "arcade", "neogeo"):
+                continue
+            dest = console_dir(c) / f.name
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.exists() and dest.stat().st_size == f.stat().st_size:
+                    f.unlink()                 # déjà présent au bon endroit : copie en trop
+                elif not dest.exists():
+                    shutil.move(str(f), str(dest))
+                else:
+                    continue
+                moved.append((f.name, c))
+            except OSError:
+                pass
+    return moved
+
+
 def plan_import(selection) -> ImportPlan:
     shutil.rmtree(STAGING, ignore_errors=True)
     loose, used, unnamed = find_loose_arcade(selection)
@@ -309,7 +349,10 @@ def execute_import(plan: ImportPlan, move=False, progress=None):
     jobs = []
     for src, cid in plan.games:
         dest_dir = console_dir(cid)
-        jobs.append((src, dest_dir / src.name, True))
+        name = src.name
+        if cid in ("mame", "arcade", "neogeo"):     # « sf2 (1).zip » -> « sf2.zip » (nom exact exigé)
+            name = strip_dup(src.stem) + src.suffix
+        jobs.append((src, dest_dir / name, True))
         for extra in companions(src):
             try:
                 rel = extra.relative_to(src.parent)
@@ -319,6 +362,9 @@ def execute_import(plan: ImportPlan, move=False, progress=None):
     for src, target in plan.bios:
         if target.startswith("kickzip:"):
             install_kickstart(src, target[8:])
+            continue
+        if target.startswith("mame:"):         # BIOS de MAME : à côté des jeux, sous son nom exact
+            jobs.append((src, console_dir("mame") / target[5:], False))
             continue
         jobs.append((src, paths.BIOS / target, False))
         if target == "neogeo.zip":

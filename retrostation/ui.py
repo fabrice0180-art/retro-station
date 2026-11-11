@@ -1057,6 +1057,11 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setAcceptDrops(True)
         self._build()
+        try:
+            from .library import relocate_misfiled
+            relocate_misfiled()           # disquettes rangées par erreur avec les bornes d'arcade
+        except Exception:
+            pass
         self.refresh()
 
         self.pad_prev = 0
@@ -1599,7 +1604,7 @@ class MainWindow(QMainWindow):
             msg += ("\n\nJeux d'arcade décompressés remis en .zip : " + ", ".join(plan.rebuilt[:12])
                     + ("…" if len(plan.rebuilt) > 12 else ""))
         if plan.bios:
-            msg += "\n\nBIOS rangés : " + ", ".join(Path(t).name for _, t in plan.bios)
+            msg += "\n\nBIOS rangés : " + ", ".join(Path(t.split(":", 1)[-1]).name for _, t in plan.bios)
         if errors:
             msg += "\n\nProblèmes :\n" + "\n".join(errors[:8])
         self.refresh()
