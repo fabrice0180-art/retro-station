@@ -122,6 +122,9 @@ def write_core_options(cid, disp) -> Path:
         # un seul lecteur (DF0) : les disquettes se changent avec F6 / F7 / F5 (mode « plusieurs lecteurs »
         # désactivé, il empêchait de changer la disquette du lecteur DF0)
         lines["puae_floppy_multidrive"] = '"disabled"'
+        # Les images .ipf sont en lecture seule : sans redirection, les jeux qui écrivent sur leur
+        # disquette de données (ligues, équipes, scores — ex. Tip Off) la refusent en boucle.
+        lines["puae_floppy_write_redirect"] = '"enabled"'
 
     if cid in RES3D_OPTIONS:
         f = max(1, min(6, int(disp.get("dolphin_res", 4))))
@@ -359,6 +362,56 @@ def _zip_images(zf):
     return floppies, hd
 
 
+def blank_amiga_adf(path: Path, label: str = "SAUVEGARDE"):
+    """Crée une disquette Amiga vierge formatée (AmigaDOS OFS, 880 Ko) : la « data disk » / disquette de
+    sauvegarde que beaucoup de jeux demandent pour enregistrer équipes, scores et parties."""
+    import datetime
+    import struct
+    blocks, size = 1760, 512
+    data = bytearray(blocks * size)
+    data[0:4] = b"DOS\x00"                       # bloc d'amorce (non amorçable)
+    struct.pack_into(">I", data, 8, 880)
+    days = (datetime.date.today() - datetime.date(1978, 1, 1)).days
+    root = bytearray(size)
+    struct.pack_into(">I", root, 0x000, 2)        # T_HEADER
+    struct.pack_into(">I", root, 0x00C, 72)       # taille de la table de hachage
+    struct.pack_into(">I", root, 0x138, 0xFFFFFFFF)   # carte des blocs valide
+    struct.pack_into(">I", root, 0x13C, 881)      # bloc de la carte des blocs
+    for off in (0x1A4, 0x1D8, 0x1E4):
+        struct.pack_into(">III", root, off, days, 0, 0)
+    name = label.encode("ascii", "ignore")[:30]
+    root[0x1B0] = len(name)
+    root[0x1B1:0x1B1 + len(name)] = name
+    struct.pack_into(">I", root, 0x1FC, 1)        # ST_ROOT
+    chk = -sum(struct.unpack(">128I", root)) & 0xFFFFFFFF
+    struct.pack_into(">I", root, 0x014, chk)
+    data[880 * size:881 * size] = root
+    bm = bytearray(size)
+    for blk in range(2, blocks):                  # 1 = bloc libre
+        if blk in (880, 881):
+            continue
+        bit = blk - 2
+        word = 1 + bit // 32
+        val = struct.unpack_from(">I", bm, word * 4)[0] | (1 << (bit % 32))
+        struct.pack_into(">I", bm, word * 4, val)
+    chk = -sum(struct.unpack(">128I", bm)) & 0xFFFFFFFF
+    struct.pack_into(">I", bm, 0, chk)
+    data[881 * size:882 * size] = bm
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(data))
+
+
+def save_disk_for(game) -> Path:
+    """Disquette de sauvegarde propre à chaque jeu, gardée dans Sauvegardes/disquettes."""
+    import re
+    from .library import DISK_TAG
+    base = re.sub(r'[<>:"/\\|?*]', "_", DISK_TAG.sub("", game.path.stem))
+    f = paths.SAVES / "disquettes" / f"{base} - sauvegarde.adf"
+    if not f.exists():
+        blank_amiga_adf(f)
+    return f
+
+
 def prepare_floppy_game(game):
     """Prépare un jeu Amiga / Atari ST pour l'émulateur :
     - les .zip sont décompressés (l'émulateur lit alors l'image de disquette directement) ;
@@ -400,11 +453,14 @@ def prepare_floppy_game(game):
             continue
     if not disks:
         return None
+    labels = [f"Disquette {i} / {len(disks)}" for i in range(1, len(disks) + 1)]
+    if game.console == "amiga":       # + une disquette de sauvegarde vierge (« data disk »)
+        disks.append(save_disk_for(game))
+        labels.append("Disquette de sauvegarde (vierge)")
     if len(disks) == 1:
         return disks[0]
     m3u = cache / (re.sub(r'[<>:"/\\|?*]', "_", base) + ".m3u")
-    total = len(disks)
-    m3u.write_text("".join(f"{d}|Disquette {i} / {total}\n" for i, d in enumerate(disks, 1)), encoding="utf-8")
+    m3u.write_text("".join(f"{d}|{lab}\n" for d, lab in zip(disks, labels)), encoding="utf-8")
     return m3u
 
 
