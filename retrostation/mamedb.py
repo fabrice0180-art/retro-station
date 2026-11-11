@@ -98,8 +98,9 @@ def parse(data: bytes) -> dict:
 def download():
     """Télécharge et réduit la liste (à lancer en tâche de fond). Renvoie True si disponible."""
     global _db
+    from . import romcheck
     with _lock:
-        if _load_cache() is not None:
+        if _load_cache() is not None and romcheck.ready("mame"):
             return True
         for url in _sources():
             try:
@@ -109,6 +110,11 @@ def download():
                 continue
             db = parse(data)
             _log.append(f"{url} : {len(db)} jeux")
+            if len(db) > 1000 and "mame2003" not in url:
+                try:
+                    romcheck.save("mame", romcheck.parse_crcs(data))
+                except Exception:
+                    pass
             if len(db) > 1000:
                 CACHE.parent.mkdir(parents=True, exist_ok=True)
                 CACHE.write_text(json.dumps(db, ensure_ascii=False), encoding="utf-8")

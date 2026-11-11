@@ -180,4 +180,5 @@ BIOS_FILES = {
     "ng-lo.rom": "neocd/ng-lo.rom",
 }
 
-RETROARCH_CORES = sorted({c.core for c in CONSOLES if c.engine == "retroarch"})
+# + MAME 2003-Plus : lit les anciennes collections de jeux d'arcade (format MAME 0.78)
+RETROARCH_CORES = sorted({c.core for c in CONSOLES if c.engine == "retroarch"} | {"mame2003_plus"})

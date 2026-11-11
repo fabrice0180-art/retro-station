@@ -272,6 +272,8 @@ def relocate_misfiled():
                     moved.append((clean, cid))
                 except OSError:
                     pass
+            if _SET_NAME.match(f.stem):        # nom court de borne (sf2, daytona…) : rien à vérifier
+                continue
             c, _cands = sniff_zip_contents(f)
             if not c or c in ("mame", "arcade", "neogeo"):
                 continue
@@ -527,7 +529,27 @@ def analyze(games, progress=None):
         done += len(gs)
         if progress:
             progress(done / total)
-    # 3) ROMs douteuses
+    # 3) jeux d'arcade qui ne pourront pas démarrer (version ou fichiers manquants)
+    try:
+        from . import romcheck
+        arc = [g for g in games if g.console in romcheck.ARCADE_CONSOLES]
+        ko = []
+        for i, g in enumerate(arc):
+            try:
+                romcheck.choose(g)
+            except romcheck.Incomplete as e:
+                ko.append((g, f"{len(e.missing)} puce(s) manquante(s)"
+                           + (f", il manque {', '.join(e.needs_zip)}" if e.needs_zip else ""), False))
+            except Exception:
+                pass
+            if progress and i % 200 == 0:
+                progress(min(0.99, i / max(len(arc), 1)))
+        if ko:
+            groups.append({"kind": "arcade", "title": "Jeux d'arcade qui ne pourront pas démarrer",
+                           "console": "", "items": ko})
+    except Exception:
+        pass
+    # 4) ROMs douteuses
     bad_items = []
     for g in games:
         why = bad_reason(g)

@@ -36,8 +36,9 @@ def ready():
 def download():
     """Télécharge et convertit la liste (à lancer en tâche de fond). Renvoie True si disponible."""
     global _db
+    from . import romcheck
     with _lock:
-        if _load_cache() is not None:
+        if _load_cache() is not None and romcheck.ready("fbneo"):
             return True
         url = None
         try:
@@ -53,6 +54,14 @@ def download():
             data = engines.fetch(url or FALLBACK, timeout=120)
         except Exception:
             return False
+        try:
+            crcs = romcheck.parse_crcs(data)
+            if len(crcs) > 1000:
+                romcheck.save("fbneo", crcs)
+        except Exception:
+            pass
+        if _load_cache() is not None:
+            return True
         db = {}
         try:
             root = ET.fromstring(data)

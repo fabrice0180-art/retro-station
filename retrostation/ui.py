@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QListWidget, 
                                QMenu, QAbstractButton, QGridLayout, QComboBox, QFormLayout, QSlider,
                                QStyledItemDelegate, QStyle, QTreeWidget, QTreeWidgetItem)
 
+from . import romcheck
 from . import paths, engines, covers, launch, gamepad, photos
 from .consoles import CONSOLES, BY_ID, FAMILIES
 from .library import (Library, plan_import, execute_import, console_dir, analyze, preferred_only,
@@ -572,7 +573,7 @@ Astuce : « Enregistrer le remappage du jeu » garde des commandes spéciales po
 # ------------------------------------------------------------------ ménage de la bibliothèque
 class CleanupDialog(QDialog):
     KIND = {"identique": "Copies identiques", "versions": "Plusieurs versions du même jeu",
-            "douteuse": "ROMs douteuses"}
+            "douteuse": "ROMs douteuses", "arcade": "Jeux d'arcade qui ne pourront pas démarrer"}
 
     def __init__(self, win):
         super().__init__(win)
@@ -619,18 +620,19 @@ class CleanupDialog(QDialog):
         self.info.setText("Coche ce que tu veux retirer (les propositions sont déjà cochées). "
                           "Les fichiers vont dans la corbeille de ton ordinateur : tu peux les récupérer.")
         self.tree.blockSignals(True)
-        for kind in ("identique", "versions", "douteuse"):
+        flat = ("douteuse", "arcade")
+        for kind in ("identique", "versions", "arcade", "douteuse"):
             sub = [g for g in groups if g["kind"] == kind]
             if not sub:
                 continue
-            top = QTreeWidgetItem([f"{self.KIND[kind]} ({len(sub) if kind != 'douteuse' else len(sub[0]['items'])})"])
+            top = QTreeWidgetItem([f"{self.KIND[kind]} ({len(sub) if kind not in flat else len(sub[0]['items'])})"])
             f = top.font(0)
             f.setBold(True)
             top.setFont(0, f)
             self.tree.addTopLevelItem(top)
             for grp in sub:
                 parent = top
-                if kind != "douteuse":
+                if kind not in flat:
                     parent = QTreeWidgetItem([grp["title"], BY_ID[grp["console"]].name, ""])
                     top.addChild(parent)
                 for game, why, remove in grp["items"]:
@@ -1413,9 +1415,11 @@ class MainWindow(QMainWindow):
             self.cover_pool.submit(job, g)
 
     def fetch_arcade_names(self):
-        from . import arcadedb, mamedb
-        want_mame = not mamedb.ready() and any(g.console == "mame" for g in self.lib.games)
-        if arcadedb.ready() and not want_mame:
+        from . import arcadedb, mamedb, romcheck
+        has_arcade = any(g.console in romcheck.ARCADE_CONSOLES for g in self.lib.games)
+        want_mame = has_arcade and not (mamedb.ready() and romcheck.ready("mame"))
+        want_2003 = has_arcade and not romcheck.ready("mame2003_plus")
+        if arcadedb.ready() and romcheck.ready("fbneo") and not want_mame and not want_2003:
             return
         sig = self.arcade_signals = Signals()
         sig.done.connect(lambda ok: ok and self._arcade_ready())
@@ -1424,6 +1428,8 @@ class MainWindow(QMainWindow):
             ok = arcadedb.download()
             if want_mame:
                 ok = mamedb.download() or ok
+            if want_2003:
+                romcheck.download_mame2003()
             sig.done.emit(ok)
         self.cover_pool.submit(job)
 
@@ -1631,7 +1637,7 @@ class MainWindow(QMainWindow):
         if g and self.proc is None:
             self.play(g)
 
-    def play(self, game, use_shader=True):
+    def play(self, game, use_shader=True, force_core=None):
         c = BY_ID[game.console]
         if launch.needs_capsimg(game):
             lib = "capsimg.dll" if paths.IS_WINDOWS else "capsimg.so"
@@ -1683,7 +1689,11 @@ class MainWindow(QMainWindow):
             scr = QApplication.primaryScreen()
             ratio = scr.devicePixelRatio() if scr else 1.0
             size = (round(scr.size().width() * ratio), round(scr.size().height() * ratio)) if scr else (1920, 1080)
-            exe, args, cwd, self.shader_used = launch.build_command(game, self.settings, use_shader, size)
+            st = dict(self.settings, _force_core=force_core) if force_core else self.settings
+            exe, args, cwd, self.shader_used = launch.build_command(game, st, use_shader, size)
+        except romcheck.Incomplete as e:
+            self._arcade_incomplete(game, e)
+            return
         except launch.LaunchError as e:
             r = QMessageBox.question(self, "Moteur manquant", f"{e}\n\nL'installer maintenant ?")
             if r == QMessageBox.StandardButton.Yes:
@@ -1720,6 +1730,28 @@ class MainWindow(QMainWindow):
         self.proc.start()
         QTimer.singleShot(700, lambda: self.proc is not None and self.showMinimized())
 
+    def _arcade_incomplete(self, game, e):
+        miss = ", ".join(e.missing[:6]) + ("…" if len(e.missing) > 6 else "")
+        txt = (f"« {game.title} » ne peut pas démarrer : ce fichier n'est pas dans la version attendue "
+               "par les émulateurs d'arcade (FinalBurn Neo, MAME récent, MAME 2003-Plus), ou il est "
+               f"incomplet.\n\nVersion la plus proche : {romcheck.CORE_NAMES.get(e.best_core, e.best_core)}"
+               f"\nPuces manquantes ({len(e.missing)}) : {miss}")
+        if e.needs_zip:
+            txt += ("\n\nIl manque aussi : " + ", ".join(e.needs_zip) +
+                    " (jeu principal ou BIOS de la borne : importe-le, il sera rangé tout seul).")
+        txt += ("\n\nLes jeux d'arcade doivent venir d'une même collection, faite pour l'une de ces "
+                "versions. Astuce : « Ménage » > « Jeux d'arcade » liste ceux qui ne pourront pas démarrer.")
+        box = QMessageBox(self)
+        box.setWindowTitle("Jeu d'arcade incomplet")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(txt)
+        box.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
+        tryit = box.addButton(f"Essayer quand même ({romcheck.CORE_NAMES.get(e.best_core, e.best_core)})",
+                              QMessageBox.ButtonRole.ActionRole)
+        box.exec()
+        if box.clickedButton() == tryit:
+            self.play(game, force_core=e.best_core)
+
     def stop_game(self):
         # demande polie de fermeture : le moteur affiche sa confirmation et sauvegarde
         if self.proc is not None and self.proc.state() != QProcess.ProcessState.NotRunning:
@@ -1749,7 +1781,9 @@ class MainWindow(QMainWindow):
             self.status.setText("Relance sans effet d'écran…")
             QTimer.singleShot(300, lambda g=game: self.play(g, use_shader=False))
         elif code not in (0, None):
+            why = launch.failure_reason()
             QMessageBox.warning(self, "Le jeu s'est arrêté",
+                                (why + "\n\n") if why else
                                 "Le jeu s'est fermé tout de suite. Le fichier est peut-être abîmé, "
                                 "incomplet, ou il manque un BIOS.\n\nDétails techniques : dossier Journaux.")
 
