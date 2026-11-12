@@ -151,7 +151,7 @@ def screen_rect(cid, pct, W, H):
 NO_AUTOSTATE = {"amiga", "atarist"}   # ordinateurs à disquettes : la reprise auto peut figer le démarrage
 
 
-def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None, core_opts=None,
+def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None, core_opts=None, screen=None,
                         autostate=True) -> Path:
     """bezel = (fichier .cfg du contour, (x, y, w, h) du trou) ou None."""
     paths.ENGINES.mkdir(parents=True, exist_ok=True)
@@ -193,6 +193,12 @@ def write_retroarch_cfg(disp: dict, bezel=None, confirm_quit=True, viewport=None
     }
     if core_opts:
         vals.update({"global_core_options": "true", "core_options_path": str(core_opts)})
+    if (bezel or viewport) and screen and paths.IS_WINDOWS:
+        # Contour / écran réduit : le jeu est placé au pixel près. En plein écran « fenêtré », Windows
+        # peut agrandir RetroArch (mise à l'échelle 150 %, 200 %…) et tout décaler : on passe en vrai
+        # plein écran, à la résolution exacte de l'écran.
+        vals.update({"video_windowed_fullscreen": "false",
+                     "video_fullscreen_x": str(int(screen[0])), "video_fullscreen_y": str(int(screen[1]))})
     if not bezel and viewport:
         x, y, w, h = viewport
         vals.update({
@@ -547,7 +553,7 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     if not bezel and disp.get("fullscreen", True) and int(disp.get("screen_size", 100)) < 100:
         viewport = screen_rect(game.console, int(disp["screen_size"]), int(screen[0]), int(screen[1]))
     core_opts = write_core_options(game.console, disp)
-    cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True), viewport, core_opts,
+    cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True), viewport, core_opts, screen,
                               autostate=game.console not in NO_AUTOSTATE)
     prepared = prepare_floppy_game(game) or prepare_cart(game, c)
     if prepared:
