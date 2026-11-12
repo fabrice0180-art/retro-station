@@ -451,8 +451,16 @@ def _pref_stem(stem):
 
 
 def _crc(path, limit=None):
+    """Empreinte du fichier. Gros fichiers (disques Wii, GameCube… souvent tous de la même taille) :
+    début + milieu + fin seulement, sinon l'analyse durerait des heures."""
     c = 0
+    size = path.stat().st_size
     with open(path, "rb") as f:
+        if size > 64 << 20:
+            for off in (0, size // 2, max(0, size - (8 << 20))):
+                f.seek(off)
+                c = _zlib.crc32(f.read(8 << 20), c)
+            return c
         while True:
             b = f.read(1 << 20)
             if not b:
@@ -475,11 +483,12 @@ def bad_reason(game):
     if game.path.suffix.lower() == ".zip":
         import zipfile
         try:
+            # lecture du sommaire seulement (rapide) : décompresser 20 000 archives prendrait des heures
             with zipfile.ZipFile(game.path) as z:
-                if z.testzip() is not None:
-                    return "archive .zip abîmée"
+                if not [i for i in z.infolist() if not i.is_dir()]:
+                    return "archive .zip vide"
         except Exception:
-            return "archive .zip illisible"
+            return "archive .zip abîmée ou illisible"
     return ""
 
 
@@ -489,6 +498,11 @@ def analyze(games, progress=None):
     groups = []
     flagged = set()
     by_console = {}
+    outer = progress
+
+    def stage(lo, hi):
+        return (lambda f: outer(lo + (hi - lo) * max(0.0, min(1.0, f)))) if outer else None
+    progress = stage(0.0, 0.4)
     for g in games:
         by_console.setdefault(g.console, []).append(g)
     done, total = 0, max(len(games), 1)
@@ -533,6 +547,7 @@ def analyze(games, progress=None):
     try:
         from . import romcheck
         if any(g.console in romcheck.ARCADE_CONSOLES for g in games):
+            progress = stage(0.4, 0.9)
             if progress:
                 progress(0.0)
             romcheck.ensure_lists()
@@ -562,7 +577,10 @@ def analyze(games, progress=None):
                        "text": "⚠ La vérification des jeux d'arcade a échoué (détails : Journaux/menage.log)."})
     # 4) ROMs douteuses
     bad_items = []
-    for g in games:
+    progress = stage(0.9, 1.0)
+    for i, g in enumerate(games):
+        if progress and i % 500 == 0:
+            progress(i / max(len(games), 1))
         why = bad_reason(g)
         if why:
             bad_items.append((g, why, True))
