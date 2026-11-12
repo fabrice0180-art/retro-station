@@ -470,6 +470,35 @@ def prepare_floppy_game(game):
 
 
 # ------------------------------------------------------------------ commande
+CART_SKIP = {"arcade", "neogeo", "mame", "amiga", "atarist", "psp", "segacd", "saturn", "dreamcast",
+             "gamecube", "wii", "neogeocd"}
+
+
+def prepare_cart(game, c):
+    """Cartouche dans un .zip avec une extension que l'émulateur refuse (ex. un jeu Super Nintendo
+    en « .bin ») : on la sort du .zip avec la bonne extension. Renvoie le nouveau chemin ou None."""
+    if game.console in CART_SKIP or game.path.suffix.lower() != ".zip":
+        return None
+    import hashlib
+    import zipfile
+    ok_exts = {e for e in c.exts if e not in (".zip", ".7z")}
+    try:
+        with zipfile.ZipFile(game.path) as z:
+            files = [i for i in z.infolist() if not i.is_dir()]
+            if not files or any(Path(i.filename).suffix.lower() in ok_exts for i in files):
+                return None                 # l'émulateur sait déjà le lire
+            rom = max(files, key=lambda i: i.file_size)
+            ext = next(iter(e for e in c.exts if e not in (".zip", ".7z")), ".bin")
+            key = hashlib.md5(f"{game.path}|{game.path.stat().st_mtime}".encode()).hexdigest()[:10]
+            out = paths.ENGINES / "cartouches" / key / (game.path.stem + ext)
+            if not out.exists():
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(z.read(rom.filename))
+            return out
+    except (zipfile.BadZipFile, OSError):
+        return None
+
+
 def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     """Renvoie (programme, arguments, dossier de travail, effet utilisé ?)."""
     c = BY_ID[game.console]
@@ -515,7 +544,7 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     core_opts = write_core_options(game.console, disp)
     cfg = write_retroarch_cfg(disp, bezel, settings.get("confirm_quit", True), viewport, core_opts,
                               autostate=game.console not in NO_AUTOSTATE)
-    prepared = prepare_floppy_game(game)
+    prepared = prepare_floppy_game(game) or prepare_cart(game, c)
     if prepared:
         rom = str(prepared)
     args = ["-L", str(core), rom, "--appendconfig", str(cfg)]
