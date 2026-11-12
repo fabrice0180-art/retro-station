@@ -1836,9 +1836,22 @@ class MainWindow(QMainWindow):
             self.status.setText("Relance sans effet d'écran…")
             QTimer.singleShot(300, lambda g=game: self.play(g, use_shader=False))
         elif code not in (0, None):
-            why = launch.failure_reason()
+            why, chips = launch.failure_reason()
+            if chips and game.console in romcheck.ARCADE_CONSOLES and launch.LAST_CORE:
+                # cet émulateur refuse le jeu : on retient, et on essaie tout seul un autre émulateur
+                romcheck.mark_failed(game, launch.LAST_CORE)
+                try:
+                    core, _used = romcheck.choose(game)
+                except romcheck.Incomplete:
+                    core = None
+                except Exception:
+                    core = None
+                if core and core != launch.LAST_CORE:
+                    self.status.setText(f"Essai avec {romcheck.CORE_NAMES.get(core, core)}…")
+                    QTimer.singleShot(300, lambda g=game: self.play(g))
+                    return
             QMessageBox.warning(self, "Le jeu s'est arrêté",
-                                (why + "\n\n") if why else
+                                why if why else
                                 "Le jeu s'est fermé tout de suite. Le fichier est peut-être abîmé, "
                                 "incomplet, ou il manque un BIOS.\n\nDétails techniques : dossier Journaux.")
 

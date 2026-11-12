@@ -61,19 +61,30 @@ def download_cover(game) -> Path | None:
     system = BY_ID[game.console].thumbs
     if not system:
         return None
+    cands = _candidates(game)
+    if not cands:
+        return None          # nom du jeu pas encore connu (liste d'arcade en cours) : on réessaiera
     dest.parent.mkdir(parents=True, exist_ok=True)
-    for n, name in enumerate(_candidates(game)):
-        for host in (HOSTS if n == 0 else HOSTS[:1]):   # site de secours seulement pour le nom exact
-            url = host.format(sys=urllib.parse.quote(system),
-                              repo=urllib.parse.quote(system.replace(" ", "_")),
-                              name=urllib.parse.quote(name))
-            try:
-                data = engines.fetch(url, timeout=15)
-            except Exception:
-                continue
-            if data[:8] == b"\x89PNG\r\n\x1a\n":
-                dest.write_bytes(data)
-                return dest
+    arcade = game.console in ("arcade", "neogeo", "mame")
+    # arcade : beaucoup de bornes n'ont pas d'affiche -> écran titre, puis image du jeu
+    kinds = ("Named_Boxarts", "Named_Titles", "Named_Snaps") if arcade else ("Named_Boxarts",)
+    systems = [system]
+    if arcade:
+        systems += [s for s in ("FBNeo - Arcade Games", "MAME") if s != system]
+    for kind in kinds:
+        for sysname in systems:
+            for n, name in enumerate(cands):
+                for host in (HOSTS if n == 0 and kind == kinds[0] and sysname == system else HOSTS[:1]):
+                    url = host.replace("Named_Boxarts", kind).format(
+                        sys=urllib.parse.quote(sysname), repo=urllib.parse.quote(sysname.replace(" ", "_")),
+                        name=urllib.parse.quote(name))
+                    try:
+                        data = engines.fetch(url, timeout=15)
+                    except Exception:
+                        continue
+                    if data[:8] == b"\x89PNG\r\n\x1a\n":
+                        dest.write_bytes(data)
+                        return dest
     try:
         miss.touch()
     except OSError:

@@ -177,6 +177,36 @@ def check(core: str, game_path: Path):
     return missing, used
 
 
+FAILED = paths.ENGINES / "arcade-echecs.json"
+_failed = None
+
+
+def _failed_db():
+    global _failed
+    if _failed is None:
+        try:
+            _failed = json.loads(FAILED.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _failed = {}
+    return _failed
+
+
+def mark_failed(game, core):
+    """L'émulateur a refusé ce jeu (les listes peuvent dater d'une version plus ancienne) : on retient."""
+    db = _failed_db()
+    lst = db.setdefault(game.path.name.lower(), [])
+    if core not in lst:
+        lst.append(core)
+    try:
+        FAILED.write_text(json.dumps(db), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def failed_cores(game):
+    return set(_failed_db().get(game.path.name.lower(), []))
+
+
 class Incomplete(Exception):
     def __init__(self, best_core, missing, needs_zip):
         super().__init__("jeu d'arcade incomplet")
@@ -188,7 +218,10 @@ def choose(game):
     order = ORDER.get(game.console, ())
     best = None
     known_anywhere = False
+    ko = failed_cores(game)
     for core in order:
+        if core in ko:
+            continue
         res = check(core, game.path)
         if res is None:
             continue

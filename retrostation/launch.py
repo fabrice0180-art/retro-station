@@ -499,6 +499,9 @@ def prepare_cart(game, c):
         return None
 
 
+LAST_CORE = None
+
+
 def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
     """Renvoie (programme, arguments, dossier de travail, effet utilisé ?)."""
     c = BY_ID[game.console]
@@ -526,6 +529,8 @@ def build_command(game, settings: dict, use_shader=True, screen=(1920, 1080)):
             core_id, used = romcheck.choose(game)      # peut lever romcheck.Incomplete
         core_id = core_id or c.core
         rom = str(romcheck.launch_folder(game, used))
+    global LAST_CORE
+    LAST_CORE = core_id
     core = engines.core_path(core_id)
     if not core.exists():
         raise LaunchError(f"Le moteur « {core_id} » pour {c.name} n'est pas encore installé.")
@@ -581,32 +586,37 @@ def forget_resume(game) -> int:
 
 
 def failure_reason():
-    """Explication en clair d'un jeu qui s'est fermé tout de suite (d'après le journal de RetroArch)."""
+    """Explication en clair d'un jeu qui s'est fermé tout de suite (d'après le journal de RetroArch).
+    Renvoie (message, puces_manquantes : bool)."""
     import re
     f = paths.LOGS / "retroarch.log"
     try:
-        log = f.read_text(encoding="utf-8", errors="ignore")[-20000:]
+        log = f.read_text(encoding="utf-8", errors="ignore")[-30000:]
     except OSError:
-        return ""
+        return "", False
     lost = re.findall(r"(\S+) NOT FOUND \(tried in ([^)]*)\)", log)
     if lost:
-        zips = []
-        for _rom, where in lost:
-            for z in where.split():
-                if z not in zips:
-                    zips.append(z)
-        roms = ", ".join(r for r, _ in lost[:6]) + ("…" if len(lost) > 6 else "")
-        extra = [z for z in zips[:-1]] if len(zips) > 1 else []
-        msg = f"Il manque des puces au jeu : {roms}."
-        if extra:
-            msg += ("\n\nElles sont cherchées dans : " + ", ".join(z + ".zip" for z in zips) +
-                    ".\nIl te manque sans doute : " + ", ".join(z + ".zip" for z in extra) +
-                    " (le jeu principal ou le BIOS de la borne : importe-le dans Rétro Station, "
-                    "il sera rangé tout seul).")
-        else:
-            msg += "\n\nCe fichier n'est pas dans la version attendue par l'émulateur, ou il est incomplet."
-        return msg
+        from . import romcheck
+        bios, game_roms = [], []
+        for rom, where in lost:
+            zips = where.split()
+            absent = [z for z in zips if not romcheck.find_zip(z)]
+            if absent:
+                # puce d'une carte / d'un composant partagé (ex. QSound) : son BIOS manque
+                for z in [x for x in absent if not x.endswith("_hle")] or absent:
+                    if z not in bios:
+                        bios.append(z)
+            else:
+                game_roms.append(rom)
+        parts = []
+        if game_roms:
+            parts.append("Ce .zip n'est pas dans la version attendue par l'émulateur, ou il est incomplet "
+                         "(puces absentes : " + ", ".join(game_roms[:5]) + ("…" if len(game_roms) > 5 else "") + ").")
+        if bios:
+            parts.append("Il manque le BIOS : " + " ou ".join(z + ".zip" for z in bios) +
+                         " (importe-le dans Rétro Station, il sera rangé tout seul).")
+        return "\n\n".join(parts), True
     if "Driver not found" in log or "Unknown system" in log:
         return ("Ce fichier n'est pas un jeu d'arcade reconnu (le nom du .zip doit être le nom court du jeu, "
-                "ex. sf2.zip, et le fichier ne doit pas venir d'une autre console).")
-    return ""
+                "ex. sf2.zip, et le fichier ne doit pas venir d'une autre console)."), False
+    return "", False
