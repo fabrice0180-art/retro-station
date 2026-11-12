@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
@@ -1445,13 +1446,17 @@ class MainWindow(QMainWindow):
         sig.done.connect(lambda ok: ok and self._arcade_ready())
 
         def job():
-            ok = arcadedb.download()
-            if want_mame:
-                ok = mamedb.download() or ok
-            if want_2003:
-                romcheck.download_mame2003()
-            sig.done.emit(ok)
-        self.cover_pool.submit(job)
+            ok = False
+            try:
+                ok = arcadedb.download()
+                if want_2003:
+                    romcheck.download_mame2003()
+                if want_mame:
+                    ok = mamedb.download() or ok
+            finally:
+                sig.done.emit(ok)
+        # fil à part : la file des jaquettes (des milliers de jeux) le faisait attendre indéfiniment
+        threading.Thread(target=job, daemon=True).start()
 
     def _arcade_ready(self):
         arc = ("arcade", "neogeo", "mame")
@@ -1659,6 +1664,9 @@ class MainWindow(QMainWindow):
 
     def play(self, game, use_shader=True, force_core=None):
         c = BY_ID[game.console]
+        if game.console in romcheck.ARCADE_CONSOLES and not force_core and not romcheck.ready("fbneo"):
+            self._prepare_arcade_lists(game)
+            return
         if launch.needs_capsimg(game):
             lib = "capsimg.dll" if paths.IS_WINDOWS else "capsimg.so"
             box = QMessageBox(self)
@@ -1749,6 +1757,33 @@ class MainWindow(QMainWindow):
         self.status.setText(f"▶  {game.title} en cours…")
         self.proc.start()
         QTimer.singleShot(700, lambda: self.proc is not None and self.showMinimized())
+
+    def _prepare_arcade_lists(self, game):
+        """Premier jeu d'arcade : télécharge les listes qui permettent de choisir le bon émulateur."""
+        dlg = QProgressDialog("Préparation des jeux d'arcade (une seule fois)…\n"
+                              "Téléchargement des listes des émulateurs.", None, 0, 0, self)
+        dlg.setWindowTitle("Rétro Station")
+        dlg.setMinimumDuration(0)
+        dlg.setCancelButton(None)
+        dlg.show()
+
+        def fetch(_sig):
+            from . import arcadedb
+            arcadedb.download()
+            romcheck.download_mame2003()
+            return romcheck.ready("fbneo")
+        self._lists_task = Task(fetch)
+
+        def done(ok):
+            dlg.close()
+            if ok is True:
+                self.play(game)
+            else:
+                QMessageBox.warning(self, "Jeux d'arcade",
+                                    "Impossible de télécharger les listes des émulateurs d'arcade "
+                                    "(connexion Internet ?). Réessaie dans un instant.")
+        self._lists_task.signals.done.connect(done)
+        QThreadPool.globalInstance().start(self._lists_task)
 
     def _arcade_incomplete(self, game, e):
         miss = ", ".join(e.missing[:6]) + ("…" if len(e.missing) > 6 else "")
