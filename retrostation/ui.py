@@ -626,7 +626,7 @@ class CleanupDialog(QDialog):
         else:
             self.info.setText((stats + "\n\n" if stats else "") +
                               "Coche ce que tu veux retirer (les propositions sont déjà cochées). Les doublons "
-                              "vont à la corbeille ; les jeux d'arcade non jouables sont rangés à part.")
+                              "et les jeux d'arcade non jouables vont à la corbeille (récupérables).")
         self.tree.blockSignals(True)
         flat = ("douteuse", "arcade", "repares")
         self.arcade_keys = {it[0].key for g in groups if g["kind"] == "arcade" for it in g["items"]}
@@ -679,9 +679,8 @@ class CleanupDialog(QDialog):
 
     def _trash(self):
         games = self._checked()
-        keys = getattr(self, "arcade_keys", set())
-        aside = [g for g in games if g.key in keys]
-        trash = [g for g in games if g.key not in keys]
+        aside = []                      # jeux non jouables : supprimés (corbeille) comme le reste
+        trash = list(games)
         q = []
         if trash:
             q.append(f"• {len(trash)} fichier(s) à la corbeille (récupérables depuis la corbeille)")
