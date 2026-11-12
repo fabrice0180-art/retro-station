@@ -536,7 +536,9 @@ def analyze(games, progress=None):
             if progress:
                 progress(0.0)
             romcheck.ensure_lists()
-            fixed, ko, _unknown = romcheck.repair_all(games, progress)
+            fixed, ko, unknown = romcheck.repair_all(games, progress)
+            ko = ko + [(g, "inconnu des émulateurs (nom de jeu qui n'existe pas dans FinalBurn Neo, MAME, "
+                           "MAME 2003-Plus)") for g in unknown]
             if fixed:
                 groups.append({"kind": "repares", "title": "Jeux d'arcade réparés", "console": "",
                                "items": [(g, "complété avec des puces trouvées dans ta collection", False)
@@ -544,8 +546,20 @@ def analyze(games, progress=None):
             if ko:
                 groups.append({"kind": "arcade", "title": "Jeux d'arcade qui ne pourront pas démarrer",
                                "console": "", "items": [(g, why, True) for g, why in ko]})
+            n_arc = sum(1 for g in games if g.console in romcheck.ARCADE_CONSOLES)
+            groups.append({"kind": "stats", "title": "", "console": "", "items": [],
+                           "text": f"{n_arc} jeux d'arcade vérifiés puce par puce : "
+                                   f"{n_arc - len(ko) - len(fixed)} prêts à jouer, {len(fixed)} réparés, "
+                                   f"{len(ko)} non jouables."})
     except Exception:
-        pass
+        import traceback
+        try:
+            paths.LOGS.mkdir(parents=True, exist_ok=True)
+            (paths.LOGS / "menage.log").write_text(traceback.format_exc(), encoding="utf-8")
+        except OSError:
+            pass
+        groups.append({"kind": "stats", "title": "", "console": "", "items": [],
+                       "text": "⚠ La vérification des jeux d'arcade a échoué (détails : Journaux/menage.log)."})
     # 4) ROMs douteuses
     bad_items = []
     for g in games:

@@ -207,6 +207,10 @@ def failed_cores(game):
     return set(_failed_db().get(game.path.name.lower(), []))
 
 
+class Unknown(Exception):
+    pass
+
+
 class Incomplete(Exception):
     def __init__(self, best_core, missing, needs_zip):
         super().__init__("jeu d'arcade incomplet")
@@ -232,6 +236,9 @@ def choose(game):
         if best is None or len(missing) < len(best[1]):
             best = (core, missing, used)
     if not known_anywhere:
+        from .detect import mame_support
+        if all(load(c) for c in CRC_FILES) and not mame_support(game.path.stem):
+            raise Unknown()        # aucun émulateur ne connaît ce nom de jeu
         return (order[0] if order else None), [game.path]
     core, missing, _used = best
     db = load(core) or {}
@@ -335,6 +342,9 @@ def repair_all(games, progress=None):
             continue
         except Incomplete as e:
             err = e
+        except Unknown:
+            unknown.append(g)
+            continue
         except Exception:
             continue
         if not any(check(c, g.path) is not None for c in CRC_FILES):

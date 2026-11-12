@@ -616,11 +616,17 @@ class CleanupDialog(QDialog):
         if isinstance(groups, Exception):
             self.info.setText(f"Erreur pendant l'analyse : {groups}")
             return
-        if not groups:
-            self.info.setText("✅ Aucun doublon ni ROM douteuse : ta bibliothèque est propre.")
-            return
-        self.info.setText("Coche ce que tu veux retirer (les propositions sont déjà cochées). "
-                          "Les fichiers vont dans la corbeille de ton ordinateur : tu peux les récupérer.")
+        stats = " ".join(g["text"] for g in groups if g["kind"] == "stats")
+        groups = [g for g in groups if g["kind"] != "stats"]
+        if not [g for g in groups if g["kind"] != "repares"]:
+            self.info.setText(((stats + "\n") if stats else "") +
+                              "✅ Aucun doublon ni ROM douteuse : ta bibliothèque est propre.")
+            if not groups:
+                return
+        else:
+            self.info.setText((stats + "\n\n" if stats else "") +
+                              "Coche ce que tu veux retirer (les propositions sont déjà cochées). Les doublons "
+                              "vont à la corbeille ; les jeux d'arcade non jouables sont rangés à part.")
         self.tree.blockSignals(True)
         flat = ("douteuse", "arcade", "repares")
         self.arcade_keys = {it[0].key for g in groups if g["kind"] == "arcade" for it in g["items"]}
@@ -1721,6 +1727,14 @@ class MainWindow(QMainWindow):
             exe, args, cwd, self.shader_used = launch.build_command(game, st, use_shader, size)
         except romcheck.Incomplete as e:
             self._arcade_incomplete(game, e)
+            return
+        except romcheck.Unknown:
+            QMessageBox.warning(
+                self, "Jeu d'arcade inconnu",
+                f"« {game.path.name} » n'est connu d'aucun émulateur d'arcade (FinalBurn Neo, MAME, "
+                "MAME 2003-Plus) : ce nom de jeu n'existe pas chez eux. C'est souvent un jeu modifié "
+                "(« hack »), renommé, ou un fichier d'une autre machine.\n\n"
+                "« Ménage » le propose au rangement avec les autres jeux d'arcade non jouables.")
             return
         except launch.LaunchError as e:
             r = QMessageBox.question(self, "Moteur manquant", f"{e}\n\nL'installer maintenant ?")
