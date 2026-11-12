@@ -469,6 +469,49 @@ def _crc(path, limit=None):
     return c
 
 
+_CRC_CACHE = paths.ENGINES / "cache-empreintes.json"
+
+
+def _crc_many(files):
+    """Empreintes de plusieurs fichiers : en parallèle, et gardées en cache (fichier inchangé = pas relu)."""
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+    try:
+        cache = json.loads(_CRC_CACHE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    out, todo = {}, []
+    for f in files:
+        try:
+            st = f.stat()
+        except OSError:
+            out[f] = None
+            continue
+        hit = cache.get(str(f))
+        if hit and hit[0] == [int(st.st_mtime), st.st_size]:
+            out[f] = hit[1]
+        else:
+            todo.append((f, [int(st.st_mtime), st.st_size]))
+
+    def one(item):
+        try:
+            return _crc(item[0])
+        except OSError:
+            return None
+    if todo:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for (f, stamp), c in zip(todo, ex.map(one, todo)):
+                out[f] = c
+                if c is not None:
+                    cache[str(f)] = [stamp, c]
+        try:
+            _CRC_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            _CRC_CACHE.write_text(json.dumps(cache, separators=(",", ":")), encoding="utf-8")
+        except OSError:
+            pass
+    return [out.get(f) for f in files]
+
+
 def bad_reason(game):
     low = game.path.stem.lower()
     for pat, why in BAD_TAGS:
@@ -481,14 +524,10 @@ def bad_reason(game):
     if size < 1024:
         return "fichier vide ou presque"
     if game.path.suffix.lower() == ".zip":
-        import zipfile
-        try:
-            # lecture du sommaire seulement (rapide) : décompresser 20 000 archives prendrait des heures
-            with zipfile.ZipFile(game.path) as z:
-                if not [i for i in z.infolist() if not i.is_dir()]:
-                    return "archive .zip vide"
-        except Exception:
-            return "archive .zip abîmée ou illisible"
+        # sommaire seulement, déjà en cache pour les jeux d'arcade (décompresser tout prendrait des heures)
+        from . import romcheck
+        if not romcheck.zip_entries(game.path):
+            return "archive .zip vide, abîmée ou illisible"
     return ""
 
 
@@ -518,11 +557,9 @@ def analyze(games, progress=None):
             if len(same) < 2:
                 continue
             by_crc = {}
-            for g in same:
-                try:
-                    by_crc.setdefault(_crc(g.path), []).append(g)
-                except OSError:
-                    pass
+            for g, c in zip(same, _crc_many([g.path for g in same])):
+                if c is not None:
+                    by_crc.setdefault(c, []).append(g)
             for dup in by_crc.values():
                 if len(dup) > 1:
                     dup.sort(key=_preference)
@@ -584,6 +621,11 @@ def analyze(games, progress=None):
         why = bad_reason(g)
         if why:
             bad_items.append((g, why, True))
+    try:
+        from . import romcheck
+        romcheck.save_zip_cache()
+    except Exception:
+        pass
     if bad_items:
         groups.append({"kind": "douteuse", "title": "ROMs douteuses", "console": "", "items": bad_items})
     return groups

@@ -125,6 +125,62 @@ def folders():
     return [console_dir(c) for c in ("mame", "arcade", "neogeo")] + [paths.BIOS]
 
 
+ZIP_CACHE = paths.ENGINES / "cache-zips.json"
+_zip_disk = None
+_zip_dirty = False
+_zip_lock = threading.Lock()
+
+
+def _disk():
+    global _zip_disk
+    if _zip_disk is None:
+        try:
+            _zip_disk = json.loads(ZIP_CACHE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _zip_disk = {}
+    return _zip_disk
+
+
+def save_zip_cache():
+    global _zip_dirty
+    if not _zip_dirty:
+        return
+    try:
+        with _zip_lock:
+            data = json.dumps(_disk(), separators=(",", ":"))
+            _zip_dirty = False
+        tmp = ZIP_CACHE.with_suffix(".tmp")
+        tmp.write_text(data, encoding="utf-8")
+        os.replace(tmp, ZIP_CACHE)
+    except OSError:
+        pass
+
+
+def zip_entries(path: Path):
+    """[(crc, nom), …] des fichiers d'un .zip (sommaire seulement), gardé en cache sur le disque :
+    les analyses suivantes ne rouvrent que les .zip modifiés."""
+    global _zip_dirty
+    try:
+        st = path.stat()
+    except OSError:
+        return []
+    key = str(path)
+    stamp = [int(st.st_mtime), st.st_size]
+    with _zip_lock:
+        hit = _disk().get(key)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    try:
+        with zipfile.ZipFile(path) as z:
+            ent = [[i.CRC, i.filename] for i in z.infolist() if not i.is_dir()]
+    except (zipfile.BadZipFile, OSError):
+        ent = []
+    with _zip_lock:
+        _disk()[key] = [stamp, ent]
+        _zip_dirty = True
+    return ent
+
+
 def zip_crcs(path: Path) -> set:
     try:
         st = path.stat()
@@ -132,11 +188,7 @@ def zip_crcs(path: Path) -> set:
         return set()
     key = (str(path), st.st_mtime, st.st_size)
     if key not in _zip_cache:
-        try:
-            with zipfile.ZipFile(path) as z:
-                _zip_cache[key] = {i.CRC for i in z.infolist() if not i.is_dir()}
-        except (zipfile.BadZipFile, OSError):
-            _zip_cache[key] = set()
+        _zip_cache[key] = {c for c, _n in zip_entries(path)}
     return _zip_cache[key]
 
 
@@ -295,18 +347,18 @@ def ensure_lists():
 
 
 def _index(zips, progress=None):
-    """Empreinte CRC -> (zip, nom de la puce), pour retrouver une puce rangée dans un autre .zip."""
+    """Empreinte CRC -> (zip, nom de la puce), pour retrouver une puce rangée dans un autre .zip.
+    Lecture en parallèle (disques SSD) + cache : rapide même avec 20 000 archives."""
+    from concurrent.futures import ThreadPoolExecutor
     idx = {}
-    for i, z in enumerate(zips):
-        try:
-            with zipfile.ZipFile(z) as zf:
-                for info in zf.infolist():
-                    if not info.is_dir() and info.CRC not in idx:
-                        idx[info.CRC] = (z, info.filename)
-        except (zipfile.BadZipFile, OSError):
-            pass
-        if progress and i % 300 == 0:
-            progress(i / max(len(zips), 1))
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for i, (z, ent) in enumerate(zip(zips, ex.map(zip_entries, zips))):
+            for crc, name in ent:
+                if crc not in idx:
+                    idx[crc] = (z, name)
+            if progress and i % 300 == 0:
+                progress(i / max(len(zips), 1))
+    save_zip_cache()
     return idx
 
 
@@ -382,6 +434,7 @@ def repair_all(games, progress=None):
         pending.append((g, why))
     # un jeu incomplet qui sert de « jeu principal » à un jeu qui marche reste à sa place
     bad = [(g, why) for g, why in pending if str(g.path) not in needed_by_ok]
+    save_zip_cache()
     if progress:
         progress(1.0)
     return fixed, bad, unknown
