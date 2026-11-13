@@ -1085,6 +1085,13 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setAcceptDrops(True)
         self._build()
+        if not self.settings.get("covers_index_v1"):
+            covers.forget_missing()       # nouvelle recherche souple : on retente les jaquettes manquantes
+            self.settings["covers_index_v1"] = True
+            try:
+                save_settings(self.settings)
+            except Exception:
+                pass
         try:
             from .library import relocate_misfiled
             relocate_misfiled()           # disquettes rangées par erreur avec les bornes d'arcade

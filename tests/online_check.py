@@ -6,14 +6,16 @@ import tempfile
 os.environ["RETROSTATION_HOME"] = tempfile.mkdtemp()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from retrostation import mamedb, photos, romcheck, arcadedb  # noqa: E402
+from retrostation import mamedb, photos, romcheck, arcadedb, covers  # noqa: E402
 
 ok = mamedb.download()
 for line in mamedb._log:
     print(f"::notice::MAME source {line}")
 for n in ("daytona",):
     print(f"::notice::MAME {n} = {mamedb.title(n)!r} (clone de {(mamedb.info(n) or {}).get('p')!r})")
-for cid in ("arcade", "mame"):
+idx = covers.index("Nintendo - Nintendo Entertainment System")
+print(f"::notice::Index jaquettes NES : {len(idx) if idx else 0} titres ; zelda = {(idx or {}).get('legendofzelda')}")
+for cid in ("arcade",):
     got = photos.download(cid)
     f = photos.best(cid)
     print(f"::notice::Photo {cid} : {got} {f.stat().st_size if f else 0} octets")
